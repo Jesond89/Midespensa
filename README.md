@@ -12,7 +12,7 @@ App móvil (React Native + Expo) del proyecto "Mi Despensa" — equipo DevCore.
    ```
 3. Instala las dependencias:
    ```
-   npm install
+   npm install --legacy-peer-deps
    ```
 4. Instala la app **Expo Go** en tu celular (Play Store / App Store).
 5. Levanta el proyecto:
@@ -63,6 +63,6 @@ acceso por código de hogar — ver Fase 1):
 
 ## Notas
 - No subas `node_modules/` (ya está en `.gitignore`); cada quien corre
-  `npm install` localmente.
+  `npm install --legacy-peer-deps` localmente (el flag es obligatorio: Expo SDK 57 trae un conflicto de peer-deps entre react y react-dom).
 - Antes de hacer push, corre `npx tsc --noEmit` para revisar que no haya
   errores de tipos.
