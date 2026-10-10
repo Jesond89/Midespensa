@@ -41,6 +41,15 @@ const nuevoId = (prefijo: string) => `${prefijo}${Date.now()}${Math.random().toS
 
 const HogarContext = createContext<HogarState | null>(null);
 
+// La app solo lleva comida: lo que se guardó antes con una categoría o un
+// lugar que ya no existe (higiene, baño, limpieza, lavandería) se quita al cargar.
+const RETIRADAS = { categorias: ['Higiene personal', 'Limpieza'], ubicaciones: ['Baño', 'Lavandería'] };
+function sinCategoriasRetiradas(d: Despensa): Despensa {
+  const vale = (x: { categoria?: string; ubicacion?: string }) =>
+    !RETIRADAS.categorias.includes(x.categoria ?? '') && !RETIRADAS.ubicaciones.includes(x.ubicacion ?? '');
+  return { productos: d.productos.filter(vale), faltantes: d.faltantes.filter(vale) };
+}
+
 export function HogarProvider({ children }: { children: React.ReactNode }) {
   const sesionHogar = useSesion().hogar;
   const codigo = sesionHogar?.codigo ?? null;
@@ -95,6 +104,8 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
 
       if (!datos) {
         datos = codigo === hogarMock.codigo ? { productos: productosDemo(), faltantes: faltantesDemo } : VACIA;
+      } else {
+        datos = sinCategoriasRetiradas(datos);
       }
 
       if (vigente) {

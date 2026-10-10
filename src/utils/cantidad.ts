@@ -4,7 +4,7 @@ import type { Unidad } from '../data/catalogo';
 // no cambian; las palabras se ponen en plural cuando la cantidad no es 1.
 
 const PLURALES: Partial<Record<Unidad, string>> = {
-  pieza: 'piezas', paquete: 'paquetes', docena: 'docenas', lata: 'latas', rollo: 'rollos',
+  pieza: 'piezas', paquete: 'paquetes', docena: 'docenas', lata: 'latas', frasco: 'frascos', manojo: 'manojos',
 };
 
 export function cantidadTexto(cantidad: number, unidad: Unidad) {

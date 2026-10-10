@@ -59,7 +59,7 @@ const IR_POR_CADUCAR: Opcion = { id: 'ir-por-caducar', etiqueta: 'Ver por caduca
 const IR_CADUCADOS: Opcion = { id: 'ir-caducados', etiqueta: 'Ver caducados', icono: 'alerta', ir: '/inventario?filtro=caducados' };
 const IR_DESPENSA: Opcion = { id: 'ir-despensa', etiqueta: 'Ir a mi despensa', icono: 'frasco', ir: '/inventario' };
 const IR_LISTA: Opcion = { id: 'ir-lista', etiqueta: 'Ir a mi lista', icono: 'carrito', ir: '/faltantes' };
-const IR_AGREGAR: Opcion = { id: 'ir-agregar', etiqueta: 'Agregar producto', icono: 'mas', ir: '/producto/nuevo' };
+const IR_AGREGAR: Opcion = { id: 'ir-agregar', etiqueta: 'Agregar producto', icono: 'mas', ir: '/producto/registrar' };
 const IR_COCINA: Opcion = { id: 'ir-cocina', etiqueta: 'Ver recetas', icono: 'olla', ir: '/cocina' };
 
 const SIN_PRODUCTOS: Respuesta = {

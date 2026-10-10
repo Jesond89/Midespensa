@@ -7,7 +7,7 @@ import { useHogar } from '../../../src/state/HogarProvider';
 import { UBICACIONES } from '../../../src/data/catalogo';
 import { estaCaducado, estaPorCaducar, ordenarPorCaducidad } from '../../../src/utils/caducidad';
 import { ui, spacing } from '../../../src/theme/tokens';
-import { useEspacioBarra } from '../../../src/theme/navegacion';
+import { useEspacioInferior } from '../../../src/theme/navegacion';
 
 type Filtro = 'todos' | 'por-caducar' | 'caducados';
 
@@ -24,7 +24,7 @@ const VACIOS = {
 } as const;
 
 export default function Inventario() {
-  const espacioBarra = useEspacioBarra();
+  const espacioInferior = useEspacioInferior();
   const router = useRouter();
   const params = useLocalSearchParams<{ filtro?: Filtro }>();
   const { productos } = useHogar();
@@ -42,7 +42,7 @@ export default function Inventario() {
     navigation.setOptions({
       title: FILTROS.find((f) => f.id === filtro)!.titulo,
       headerRight: () => (
-        <BotonEncabezado icono="mas" etiqueta="Agregar producto" onPress={() => router.push('/producto/nuevo')} />
+        <BotonEncabezado icono="mas" etiqueta="Agregar producto" onPress={() => router.push('/producto/registrar')} />
       ),
     });
   }, [navigation, filtro, router]);
@@ -66,7 +66,7 @@ export default function Inventario() {
     : VACIOS[filtro];
 
   return (
-    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioBarra + spacing.lg }]} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioInferior + spacing.lg }]} keyboardShouldPersistTaps="handled">
       <Grupo>
         <Campo icono="buscar" placeholder="Buscar producto o categoría" value={busqueda} onChangeText={setBusqueda} />
       </Grupo>

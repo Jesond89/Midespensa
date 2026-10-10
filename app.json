@@ -19,11 +19,24 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "output": "server"
     },
     "scheme": "midespensa",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Mi Despensa usa la cámara para escanear tus compras y registrarlas."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Mi Despensa usa tus fotos para escanear tus compras y registrarlas."
+        }
+      ]
     ],
     "newArchEnabled": true
   }
