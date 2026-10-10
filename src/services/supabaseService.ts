@@ -6,62 +6,46 @@ import type { Unidad, Categoria, Ubicacion } from '../data/catalogo';
 export const isSupabaseConfigured = (): boolean => true;
 
 /**
- * Resuelve el ID del hogar en Supabase por su código.
+ * Resuelve el ID del hogar en Supabase por su código de invitación.
  */
 export async function resolverHogarId(codigo: string): Promise<string | null> {
   const norm = codigo.trim().toUpperCase();
   const { data, error } = await supabase
     .from('hogares')
     .select('id')
-    .or(`codigo.eq.${norm},codigo_invitacion.eq.${norm}`)
+    .eq('codigo_invitacion', norm)
     .maybeSingle();
 
-  if (error || !data) return null;
-  return data.id;
-}
-
-/**
- * Garantiza que el cliente tenga un auth.uid() anónimo válido y estable.
- */
-export async function garantizarSesionAnonima(): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null;
-
-  try {
-    const { data: sesionData } = await supabase.auth.getSession();
-    if (sesionData.session?.user?.id) {
-      return sesionData.session.user.id;
-    }
-
-    const { data: signData, error } = await supabase.auth.signInAnonymously();
-    if (error) {
-      console.warn('Advertencia en signInAnonymously:', error.message);
-      return null;
-    }
-    return signData.user?.id ?? null;
-  } catch (err) {
-    console.warn('Error al garantizar sesión anónima:', err);
+  if (error) {
+    console.warn('resolverHogarId error:', error.message);
     return null;
   }
+  return data?.id ?? null;
 }
 
 /**
- * RPC crear_hogar_con_auth: Crea el hogar y asigna al usuario como 'admin'.
+ * NO requiere auth. Crea un hogar directamente.
  */
 export async function dbCrearHogar(
   nombre: string,
   nombreMostrado: string,
   codigo?: string
 ): Promise<Hogar & { id: string; rol: 'admin' | 'miembro' }> {
-  await garantizarSesionAnonima();
+  const codigoFinal = (codigo?.trim() || generarCodigoAleatorio()).toUpperCase();
 
-  const { data, error } = await supabase.rpc('crear_hogar_con_auth', {
-    p_nombre: nombre.trim(),
-    p_nombre_mostrado: nombreMostrado.trim() || 'Admin',
-    p_codigo: codigo?.trim() || null,
-  });
+  const { data, error } = await supabase
+    .from('hogares')
+    .insert({
+      nombre: nombre.trim(),
+      codigo: codigoFinal,          // columna NOT NULL
+      codigo_invitacion: codigoFinal,
+      clave: '',                     // requerida por schema (NOT NULL)
+    })
+    .select('id, nombre, codigo_invitacion')
+    .single();
 
   if (error || !data) {
-    throw new Error(error?.message || 'Error al crear el hogar en Supabase');
+    throw new Error(error?.message || 'Error al crear el hogar');
   }
 
   return {
@@ -69,64 +53,51 @@ export async function dbCrearHogar(
     codigo: data.codigo_invitacion,
     nombre: data.nombre,
     clave: '',
-    rol: data.rol,
-    integrantes: [data.nombre_mostrado],
+    rol: 'admin',
+    integrantes: [nombreMostrado || 'Admin'],
   };
 }
 
 /**
- * RPC unirse_hogar_con_auth: Valida el código en servidor y asigna al usuario como 'miembro'.
+ * NO requiere auth. Une al usuario a un hogar por código.
  */
 export async function dbUnirseHogar(
   codigo: string,
   nombreMostrado: string
 ): Promise<Hogar & { id: string; rol: 'admin' | 'miembro' }> {
-  await garantizarSesionAnonima();
+  const norm = codigo.trim().toUpperCase();
 
-  const { data, error } = await supabase.rpc('unirse_hogar_con_auth', {
-    p_codigo: codigo.trim().toUpperCase(),
-    p_nombre_mostrado: nombreMostrado.trim() || 'Miembro',
-  });
+  const { data, error } = await supabase
+    .from('hogares')
+    .select('id, nombre, codigo_invitacion')
+    .eq('codigo_invitacion', norm)
+    .maybeSingle();
 
   if (error || !data) {
-    throw new Error(error?.message || 'Error al unirse al hogar');
+    throw new Error('Código de hogar no encontrado');
   }
 
-  // Obtener la lista completa de integrantes
-  const hogarInfo = await dbObtenerMiHogar();
-
   return {
     id: data.id,
     codigo: data.codigo_invitacion,
     nombre: data.nombre,
     clave: '',
-    rol: data.rol,
-    integrantes: hogarInfo?.integrantes ?? [data.nombre_mostrado],
+    rol: 'miembro',
+    integrantes: [nombreMostrado || 'Miembro'],
   };
 }
 
 /**
- * RPC obtener_mi_hogar: Obtiene los datos del hogar activo del auth.uid().
+ * NO requiere auth. Obtiene el hogar por código guardado localmente.
  */
 export async function dbObtenerMiHogar(): Promise<(Hogar & { id: string; rol: 'admin' | 'miembro' }) | null> {
-  const uid = await garantizarSesionAnonima();
-  if (!uid) return null;
-
-  const { data, error } = await supabase.rpc('obtener_mi_hogar');
-  if (error || !data) return null;
-
-  return {
-    id: data.id,
-    codigo: data.codigo_invitacion,
-    nombre: data.nombre,
-    clave: '',
-    rol: data.rol,
-    integrantes: Array.isArray(data.integrantes) ? data.integrantes : [],
-  };
+  // Sin auth, no podemos saber qué hogar es "del usuario"
+  // Esta función retorna null; el provider usa el codigo guardado en AsyncStorage
+  return null;
 }
 
 /**
- * Consulta la despensa filtrada automáticamente por las políticas RLS.
+ * Carga la despensa del hogar filtrada por hogar_id.
  */
 export async function dbCargarDespensa(hogarId: string): Promise<{ productos: Producto[]; faltantes: ItemFaltante[] }> {
   const [resProd, resFalt] = await Promise.all([
@@ -141,6 +112,9 @@ export async function dbCargarDespensa(hogarId: string): Promise<{ productos: Pr
       .eq('hogar_id', hogarId)
       .order('agregado_en', { ascending: false }),
   ]);
+
+  if (resProd.error) console.warn('dbCargarDespensa productos error:', resProd.error.message);
+  if (resFalt.error) console.warn('dbCargarDespensa faltantes error:', resFalt.error.message);
 
   const productos: Producto[] = (resProd.data || []).map((row) => ({
     id: row.id,
@@ -191,7 +165,7 @@ export async function dbAgregarProducto(hogarId: string, p: Omit<Producto, 'id'>
 }
 
 export async function dbActualizarProducto(id: string, p: Omit<Producto, 'id'>): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('productos')
     .update({
       nombre: p.nombre,
@@ -205,10 +179,13 @@ export async function dbActualizarProducto(id: string, p: Omit<Producto, 'id'>):
       actualizado_en: new Date().toISOString(),
     })
     .eq('id', id);
+
+  if (error) console.warn('dbActualizarProducto error:', error.message);
 }
 
 export async function dbEliminarProducto(id: string): Promise<void> {
-  await supabase.from('productos').delete().eq('id', id);
+  const { error } = await supabase.from('productos').delete().eq('id', id);
+  if (error) console.warn('dbEliminarProducto error:', error.message);
 }
 
 export async function dbAgregarFaltante(hogarId: string, f: Omit<ItemFaltante, 'id'>): Promise<string> {
@@ -233,9 +210,17 @@ export async function dbAgregarFaltante(hogarId: string, f: Omit<ItemFaltante, '
 }
 
 export async function dbEliminarFaltante(id: string): Promise<void> {
-  await supabase.from('faltantes').delete().eq('id', id);
+  const { error } = await supabase.from('faltantes').delete().eq('id', id);
+  if (error) console.warn('dbEliminarFaltante error:', error.message);
 }
 
 export async function dbEliminarFaltantes(ids: string[]): Promise<void> {
-  await supabase.from('faltantes').delete().in('id', ids);
+  const { error } = await supabase.from('faltantes').delete().in('id', ids);
+  if (error) console.warn('dbEliminarFaltantes error:', error.message);
+}
+
+// Helper interno
+function generarCodigoAleatorio(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return 'DESP-' + Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }

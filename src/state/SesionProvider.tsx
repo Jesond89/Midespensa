@@ -109,7 +109,7 @@ export function SesionProvider({ children }: { children: React.ReactNode }) {
 
         if (isSupabaseConfigured()) {
           try {
-            const dbHogar = await dbCrearHogar(nombre, 'Admin', cod);
+            const dbHogar = await dbCrearHogar(nombre, nombre.trim(), cod);
             nuevoHogar = { ...nuevoHogar, id: dbHogar.id, codigo: dbHogar.codigo, rol: dbHogar.rol };
           } catch (e) {
             console.warn('Error al guardar hogar en Supabase, usando local:', e);
@@ -124,10 +124,12 @@ export function SesionProvider({ children }: { children: React.ReactNode }) {
 
         if (isSupabaseConfigured()) {
           try {
-            const unido = await dbUnirseHogar(codNormalizado, 'Miembro');
-            if (unido) {
+            const dbHogar = await dbUnirseHogar(codNormalizado, 'Admin');
+            if (dbHogar) {
+              // Guardar con la clave local para mantener compatibilidad
+              const hogarConClave = { ...dbHogar, clave };
               const otros = hogares.filter((h) => h.codigo !== codNormalizado);
-              await guardar([...otros, unido], unido.codigo);
+              await guardar([...otros, hogarConClave], dbHogar.codigo);
               return { ok: true };
             }
           } catch (e) {
