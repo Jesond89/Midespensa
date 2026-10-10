@@ -7,11 +7,24 @@
 CREATE TABLE IF NOT EXISTS public.hogares (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre TEXT NOT NULL,
+  codigo VARCHAR(32) UNIQUE,
   codigo_invitacion VARCHAR(32) UNIQUE NOT NULL,
-  creado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+  clave TEXT DEFAULT '123456',
+  creado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. MIEMBROS_HOGAR (Puente dispositivo/usuario -> hogar con rol)
+-- 2. INTEGRANTES
+CREATE TABLE IF NOT EXISTS public.integrantes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  hogar_id UUID NOT NULL REFERENCES public.hogares(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+  CONSTRAINT uq_hogar_integrante UNIQUE (hogar_id, nombre)
+);
+
+-- 3. MIEMBROS_HOGAR (Puente dispositivo/usuario -> hogar con rol)
 CREATE TABLE IF NOT EXISTS public.miembros_hogar (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   hogar_id UUID NOT NULL REFERENCES public.hogares(id) ON DELETE CASCADE,
@@ -22,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.miembros_hogar (
   CONSTRAINT uq_hogar_auth UNIQUE (hogar_id, auth_uid)
 );
 
--- 3. PRODUCTOS (Inventario por ubicación)
+-- 4. PRODUCTOS (Inventario por ubicación)
 CREATE TABLE IF NOT EXISTS public.productos (
   id TEXT PRIMARY KEY DEFAULT ('p_' || substr(md5(random()::text), 1, 12)),
   hogar_id UUID NOT NULL REFERENCES public.hogares(id) ON DELETE CASCADE,
@@ -39,7 +52,7 @@ CREATE TABLE IF NOT EXISTS public.productos (
   actualizado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. FALTANTES (Lista de compras automática)
+-- 5. FALTANTES (Lista de compras automática)
 CREATE TABLE IF NOT EXISTS public.faltantes (
   id TEXT PRIMARY KEY DEFAULT ('f_' || substr(md5(random()::text), 1, 12)),
   hogar_id UUID NOT NULL REFERENCES public.hogares(id) ON DELETE CASCADE,
@@ -51,7 +64,7 @@ CREATE TABLE IF NOT EXISTS public.faltantes (
   agregado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. RECETAS
+-- 6. RECETAS
 CREATE TABLE IF NOT EXISTS public.recetas (
   id TEXT PRIMARY KEY DEFAULT ('r_' || substr(md5(random()::text), 1, 12)),
   hogar_id UUID REFERENCES public.hogares(id) ON DELETE CASCADE NULL,
@@ -79,6 +92,14 @@ ALTER TABLE public.faltantes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recetas ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para HOGARES
+CREATE POLICY "permitir_lectura_hogares_anon" ON public.hogares
+  FOR SELECT TO anon
+  USING (true);
+
+CREATE POLICY "permitir_insert_hogares_anon" ON public.hogares
+  FOR INSERT TO anon
+  WITH CHECK (true);
+
 CREATE POLICY "miembros_ven_su_hogar" ON public.hogares
   FOR SELECT TO authenticated
   USING (
@@ -171,7 +192,6 @@ CREATE POLICY "ver_recetas" ON public.recetas
 -- FUNCIONES RPC (SECURITY DEFINER)
 -- =========================================================================
 
--- Generador de código aleatorio (8 caracteres sin 0/O/1/I)
 CREATE OR REPLACE FUNCTION public.generar_codigo_invitacion()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -188,7 +208,7 @@ BEGIN
 END;
 $$;
 
--- RPC: Crear Hogar (asigna automáticamente al usuario actual como 'admin')
+-- Crear hogar
 CREATE OR REPLACE FUNCTION public.crear_hogar_con_auth(
   p_nombre TEXT,
   p_nombre_mostrado TEXT,
@@ -205,10 +225,6 @@ DECLARE
   v_hogar_id UUID;
   v_resultado JSONB;
 BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'Usuario no autenticado (se requiere auth.uid())';
-  END IF;
-
   IF p_codigo IS NOT NULL AND length(trim(p_codigo)) > 0 THEN
     v_codigo := upper(trim(p_codigo));
   ELSE
@@ -218,19 +234,26 @@ BEGIN
     END LOOP;
   END IF;
 
-  INSERT INTO public.hogares (nombre, codigo_invitacion)
-  VALUES (trim(p_nombre), v_codigo)
+  INSERT INTO public.hogares (nombre, codigo_invitacion, codigo, clave)
+  VALUES (trim(p_nombre), v_codigo, v_codigo, '123456')
   RETURNING id INTO v_hogar_id;
 
-  INSERT INTO public.miembros_hogar (hogar_id, auth_uid, nombre_mostrado, rol)
-  VALUES (v_hogar_id, v_uid, trim(p_nombre_mostrado), 'admin')
-  ON CONFLICT (hogar_id, auth_uid) DO UPDATE
-    SET rol = 'admin', nombre_mostrado = trim(p_nombre_mostrado);
+  IF v_uid IS NOT NULL THEN
+    INSERT INTO public.miembros_hogar (hogar_id, auth_uid, nombre_mostrado, rol)
+    VALUES (v_hogar_id, v_uid, trim(p_nombre_mostrado), 'admin')
+    ON CONFLICT (hogar_id, auth_uid) DO UPDATE
+      SET rol = 'admin', nombre_mostrado = trim(p_nombre_mostrado);
+  END IF;
+
+  INSERT INTO public.integrantes (hogar_id, nombre)
+  VALUES (v_hogar_id, trim(p_nombre_mostrado))
+  ON CONFLICT (hogar_id, nombre) DO NOTHING;
 
   SELECT jsonb_build_object(
     'id', h.id,
     'nombre', h.nombre,
     'codigo_invitacion', h.codigo_invitacion,
+    'codigo', h.codigo_invitacion,
     'rol', 'admin',
     'nombre_mostrado', trim(p_nombre_mostrado)
   ) INTO v_resultado
@@ -241,7 +264,7 @@ BEGIN
 END;
 $$;
 
--- RPC: Unirse a Hogar (valida el código y asigna rol 'miembro')
+-- Unirse a hogar
 CREATE OR REPLACE FUNCTION public.unirse_hogar_con_auth(
   p_codigo TEXT,
   p_nombre_mostrado TEXT
@@ -256,37 +279,40 @@ DECLARE
   v_codigo TEXT := upper(trim(p_codigo));
   v_hogar_id UUID;
   v_resultado JSONB;
-  v_rol TEXT;
+  v_rol TEXT := 'miembro';
 BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'Usuario no autenticado (se requiere auth.uid())';
-  END IF;
-
   SELECT id INTO v_hogar_id
   FROM public.hogares
-  WHERE codigo_invitacion = v_codigo OR (codigo_invitacion IS NULL AND codigo = v_codigo);
+  WHERE codigo_invitacion = v_codigo OR codigo = v_codigo;
 
   IF v_hogar_id IS NULL THEN
     RAISE EXCEPTION 'Código de invitación inválido o no encontrado';
   END IF;
 
-  SELECT rol INTO v_rol
-  FROM public.miembros_hogar
-  WHERE hogar_id = v_hogar_id AND auth_uid = v_uid;
+  IF v_uid IS NOT NULL THEN
+    SELECT rol INTO v_rol
+    FROM public.miembros_hogar
+    WHERE hogar_id = v_hogar_id AND auth_uid = v_uid;
 
-  IF v_rol IS NULL THEN
-    v_rol := 'miembro';
+    IF v_rol IS NULL THEN
+      v_rol := 'miembro';
+    END IF;
+
+    INSERT INTO public.miembros_hogar (hogar_id, auth_uid, nombre_mostrado, rol)
+    VALUES (v_hogar_id, v_uid, trim(p_nombre_mostrado), v_rol)
+    ON CONFLICT (hogar_id, auth_uid) DO UPDATE
+      SET nombre_mostrado = trim(p_nombre_mostrado);
   END IF;
 
-  INSERT INTO public.miembros_hogar (hogar_id, auth_uid, nombre_mostrado, rol)
-  VALUES (v_hogar_id, v_uid, trim(p_nombre_mostrado), v_rol)
-  ON CONFLICT (hogar_id, auth_uid) DO UPDATE
-    SET nombre_mostrado = trim(p_nombre_mostrado);
+  INSERT INTO public.integrantes (hogar_id, nombre)
+  VALUES (v_hogar_id, trim(p_nombre_mostrado))
+  ON CONFLICT (hogar_id, nombre) DO NOTHING;
 
   SELECT jsonb_build_object(
     'id', h.id,
     'nombre', h.nombre,
     'codigo_invitacion', h.codigo_invitacion,
+    'codigo', h.codigo_invitacion,
     'rol', v_rol,
     'nombre_mostrado', trim(p_nombre_mostrado)
   ) INTO v_resultado
@@ -297,7 +323,7 @@ BEGIN
 END;
 $$;
 
--- RPC: Obtener mi membresía activa
+-- Obtener mi hogar
 CREATE OR REPLACE FUNCTION public.obtener_mi_hogar()
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -340,8 +366,9 @@ GRANT EXECUTE ON FUNCTION public.unirse_hogar_con_auth(TEXT, TEXT) TO authentica
 GRANT EXECUTE ON FUNCTION public.obtener_mi_hogar() TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.generar_codigo_invitacion() TO authenticated, anon;
 
-GRANT ALL ON TABLE public.hogares TO authenticated;
+GRANT ALL ON TABLE public.hogares TO authenticated, anon;
+GRANT ALL ON TABLE public.integrantes TO authenticated, anon;
 GRANT ALL ON TABLE public.miembros_hogar TO authenticated;
-GRANT ALL ON TABLE public.productos TO authenticated;
-GRANT ALL ON TABLE public.faltantes TO authenticated;
-GRANT ALL ON TABLE public.recetas TO authenticated;
+GRANT ALL ON TABLE public.productos TO authenticated, anon;
+GRANT ALL ON TABLE public.faltantes TO authenticated, anon;
+GRANT ALL ON TABLE public.recetas TO authenticated, anon;
