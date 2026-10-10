@@ -26,40 +26,51 @@ App móvil (React Native + Expo) del proyecto "Mi Despensa" — equipo DevCore.
 ## Estructura del proyecto
 
 ```
-app/                  Pantallas (Expo Router: cada archivo es una ruta)
-  index.tsx              Bienvenida
-  crear-hogar.tsx         Crear hogar (reemplaza "Registro")
-  unirse-hogar.tsx        Unirse con código (reemplaza "Login")
-  (tabs)/                 Menú principal
-    inventario.tsx
-    faltantes.tsx
-    cocina.tsx
-    perfil.tsx
-  producto/
-    [id].tsx               Detalle de un producto
-    nuevo.tsx               Formulario para agregar producto
+app/                     Pantallas (Expo Router: cada archivo es una ruta)
+  index.tsx                Bienvenida (Freddy + iniciar sesión / crear / unirse)
+  iniciar-sesion.tsx       Código + contraseña del hogar
+  crear-hogar.tsx          Crea el hogar y muestra su código
+  unirse-hogar.tsx         Primera vez en un hogar existente (código + nombre + contraseña)
+  (app)/                   Parte interna, requiere sesión. Freddy flota abajo a la derecha
+    (tabs)/                  Barra inferior: Inicio · Despensa · Lista · Cocina · Perfil
+      inicio.tsx               Resumen en botones + "Agregar producto"
+      inventario.tsx           Despensa por ubicación; ?filtro=por-caducar | caducados
+      faltantes.tsx            Lista de compras
+      cocina.tsx               ¿Qué cocino? (recetas de prueba)
+      perfil.tsx               Mi hogar: código, integrantes, cerrar sesión
+    producto/[id].tsx        Detalle: fechas, notas, editar, agotado, eliminar
+    producto/nuevo.tsx       Alta y edición (?id=) de productos
+
+assets/avatar/           Freddy exportado de Avatar Studio (forma, colores, expresiones)
 
 src/
-  theme/tokens.ts       Colores, tipografía y espaciados — cámbialo aquí,
-                        no repitas valores sueltos en cada pantalla
-  data/mock.ts          Datos de prueba (se reemplaza por el API real)
-  state/HogarProvider.tsx  Estado compartido en memoria (sin backend aún)
-  components/           Piezas reutilizables (Anaquel, EstadoCaducidad)
+  theme/tokens.ts        Colores (paleta `ui`), tipografía y espaciados
+  data/catalogo.ts       Categorías, ubicaciones y unidades con su ícono
+  data/mock.ts           Tipos + datos del hogar de demostración
+  state/SesionProvider   Hogares y sesión guardados en el dispositivo
+  state/HogarProvider    Productos y lista de compras por hogar (en el dispositivo)
+  utils/                 Fechas (AAAA-MM-DD), semáforo de caducidad, confirmación
+  components/avatar/     Freddy animado
+  components/ui/         Formulario, listas, burbuja y Freddy flotante
 ```
 
-## Estado actual (v0.1 — Fase 2, interfaz navegable)
+Hogar de demostración: código **DESP-7F3K**, contraseña **123456**.
 
-Todas las pantallas del punto "Construcción de la interfaz" están
-navegables con datos de prueba (`src/data/mock.ts`) y un estado en memoria
-que simula agregar productos, marcar agotado y terminar compra. **Todavía
-no hay conexión a Supabase, al backend ni a Gemini** — eso es el siguiente
-sprint.
+## Estado actual (v0.2 — interfaz navegable con datos locales)
 
-Dos pantallas de la plantilla de la materia se reinterpretaron para que
+La app ya permite iniciar sesión en un hogar, registrar productos (categoría,
+ubicación, cantidad, fecha de compra, caducidad y notas), ver lo que está por
+caducar o caducado, y manejar la lista de compras. Todo se guarda **solo en
+el dispositivo** (AsyncStorage / localStorage en web). **Todavía no hay
+conexión a Supabase, al backend ni a Gemini**: eso es el siguiente sprint, y
+para conectarlo solo hay que cambiar `SesionProvider` y `HogarProvider`.
+
+Las pantallas de la plantilla de la materia se reinterpretaron para que
 coincidan con la arquitectura ya decidida (sin cuentas individuales,
-acceso por código de hogar — ver Fase 1):
+acceso con el código y la contraseña del hogar — ver Fase 1):
 - "Registro" → **Crear hogar**
-- "Login" → **Unirse a un hogar con código**
+- "Login" → **Iniciar sesión** (código + contraseña) y **Unirse a un hogar**
+- Las contraseñas se guardan en texto plano: válido solo para el prototipo.
 
 ## Notas
 - No subas `node_modules/` (ya está en `.gitignore`); cada quien corre

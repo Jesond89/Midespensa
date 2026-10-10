@@ -1,58 +1,123 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import {
-  Producto, ItemFaltante, productosIniciales, faltantesIniciales,
-} from '../data/mock';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Producto, ItemFaltante, productosDemo, faltantesDemo, hogarMock } from '../data/mock';
+import { Unidad } from '../data/catalogo';
+import { hoyISO } from '../utils/fechas';
+import { useSesion } from './SesionProvider';
 
-// Estado en memoria para que la v0.1 se sienta real al navegarla
-// (marcar agotado, agregar producto, terminar compra), sin depender
-// todavía del backend. Esto se sustituye por React Query + API en el
-// siguiente sprint.
+// Inventario y lista de compras del hogar con sesión activa. Se guardan en
+// el dispositivo (una clave por código de hogar) mientras no exista el
+// backend; esto se sustituye por React Query + API en el siguiente sprint.
 
-type HogarState = {
-  productos: Producto[];
-  faltantes: ItemFaltante[];
-  agregarProducto: (p: Omit<Producto, 'id'>) => void;
+type Despensa = { productos: Producto[]; faltantes: ItemFaltante[] };
+
+type HogarState = Despensa & {
+  listo: boolean;
+  agregarProducto: (p: Omit<Producto, 'id'>) => string;
+  actualizarProducto: (id: string, cambios: Omit<Producto, 'id'>) => void;
+  eliminarProducto: (id: string) => void;
   marcarAgotado: (id: string) => void;
+  agregarFaltante: (nombre: string, cantidad: number, unidad: Unidad) => void;
+  quitarFaltante: (id: string) => void;
   terminarCompra: (ids: string[]) => void;
 };
+
+const VACIA: Despensa = { productos: [], faltantes: [] };
+const claveDe = (codigo: string) => `midespensa.despensa.${codigo}`;
+const nuevoId = (prefijo: string) => `${prefijo}${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
 const HogarContext = createContext<HogarState | null>(null);
 
 export function HogarProvider({ children }: { children: React.ReactNode }) {
-  const [productos, setProductos] = useState<Producto[]>(productosIniciales);
-  const [faltantes, setFaltantes] = useState<ItemFaltante[]>(faltantesIniciales);
+  const codigo = useSesion().hogar?.codigo ?? null;
+  const [despensa, setDespensa] = useState<Despensa>(VACIA);
+  const [cargadoDe, setCargadoDe] = useState<string | null>(null);
+
+  // Carga la despensa del hogar al iniciar sesión o cambiar de hogar.
+  useEffect(() => {
+    if (!codigo) { setDespensa(VACIA); setCargadoDe(null); return; }
+    let vigente = true;
+    (async () => {
+      let datos: Despensa | null = null;
+      try {
+        const guardado = await AsyncStorage.getItem(claveDe(codigo));
+        if (guardado) datos = JSON.parse(guardado);
+      } catch {
+        // Sin almacenamiento: se arranca en memoria.
+      }
+      if (!datos) {
+        datos = codigo === hogarMock.codigo ? { productos: productosDemo(), faltantes: faltantesDemo } : VACIA;
+      }
+      if (vigente) { setDespensa(datos); setCargadoDe(codigo); }
+    })();
+    return () => { vigente = false; };
+  }, [codigo]);
+
+  // Cada cambio se guarda en el dispositivo.
+  const actualizar = useCallback((cambio: (d: Despensa) => Despensa) => {
+    setDespensa((prev) => {
+      const nueva = cambio(prev);
+      if (codigo) AsyncStorage.setItem(claveDe(codigo), JSON.stringify(nueva)).catch(() => {});
+      return nueva;
+    });
+  }, [codigo]);
 
   const value = useMemo<HogarState>(() => ({
-    productos,
-    faltantes,
+    ...despensa,
+    listo: cargadoDe === codigo,
     agregarProducto: (p) => {
-      setProductos((prev) => [...prev, { ...p, id: `p${Date.now()}` }]);
+      const id = nuevoId('p');
+      actualizar((d) => ({ ...d, productos: [...d.productos, { ...p, id }] }));
+      return id;
+    },
+    actualizarProducto: (id, cambios) => {
+      actualizar((d) => ({ ...d, productos: d.productos.map((p) => (p.id === id ? { ...cambios, id } : p)) }));
+    },
+    eliminarProducto: (id) => {
+      actualizar((d) => ({ ...d, productos: d.productos.filter((p) => p.id !== id) }));
     },
     marcarAgotado: (id) => {
-      const producto = productos.find((p) => p.id === id);
-      if (!producto) return;
-      setProductos((prev) => prev.filter((p) => p.id !== id));
-      setFaltantes((prev) => [...prev, {
-        id: `f${Date.now()}`, nombre: producto.nombre, cantidad: 1, unidad: producto.unidad,
-      }]);
+      actualizar((d) => {
+        const p = d.productos.find((x) => x.id === id);
+        if (!p) return d;
+        return {
+          productos: d.productos.filter((x) => x.id !== id),
+          faltantes: [...d.faltantes, {
+            id: nuevoId('f'), nombre: p.nombre, cantidad: p.cantidad, unidad: p.unidad,
+            categoria: p.categoria, ubicacion: p.ubicacion,
+          }],
+        };
+      });
+    },
+    agregarFaltante: (nombre, cantidad, unidad) => {
+      actualizar((d) => ({ ...d, faltantes: [...d.faltantes, { id: nuevoId('f'), nombre: nombre.trim(), cantidad, unidad }] }));
+    },
+    quitarFaltante: (id) => {
+      actualizar((d) => ({ ...d, faltantes: d.faltantes.filter((f) => f.id !== id) }));
     },
     terminarCompra: (ids) => {
-      const compradas = faltantes.filter((f) => ids.includes(f.id));
-      setFaltantes((prev) => prev.filter((f) => !ids.includes(f.id)));
-      setProductos((prev) => [
-        ...prev,
-        ...compradas.map((f) => ({
-          id: `p${Date.now()}${f.id}`,
-          nombre: f.nombre,
-          categoria: 'Sin categoría',
-          ubicacion: 'Alacena' as const,
-          cantidad: f.cantidad,
-          unidad: f.unidad,
-          diasParaCaducar: null,
-        })),
-      ]);
+      actualizar((d) => {
+        const compradas = d.faltantes.filter((f) => ids.includes(f.id));
+        return {
+          faltantes: d.faltantes.filter((f) => !ids.includes(f.id)),
+          productos: [
+            ...d.productos,
+            ...compradas.map((f): Producto => ({
+              id: nuevoId('p'),
+              nombre: f.nombre,
+              categoria: f.categoria ?? 'Otros',
+              ubicacion: f.ubicacion ?? 'Alacena',
+              cantidad: f.cantidad,
+              unidad: f.unidad,
+              fechaCompra: hoyISO(),
+              fechaCaducidad: null,
+              notas: '',
+            })),
+          ],
+        };
+      });
     },
-  }), [productos, faltantes]);
+  }), [despensa, cargadoDe, codigo, actualizar]);
 
   return <HogarContext.Provider value={value}>{children}</HogarContext.Provider>;
 }

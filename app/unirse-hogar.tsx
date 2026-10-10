@@ -1,52 +1,97 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { color, spacing, type } from '../src/theme/tokens';
+import {
+  PantallaAcceso, Grupo, Campo, Boton, Nota, useReaccionFreddy,
+} from '../src/components/ui/Formulario';
+import { ErrorSesion, useSesion } from '../src/state/SesionProvider';
+import { spacing } from '../src/theme/tokens';
 
-// Reemplaza el "Login" genérico: no hay usuario/contraseña, se entra con
-// el código de hogar que ya existe (HU-01, acceso compartido sin cuentas).
+const MENSAJES: Record<ErrorSesion, string> = {
+  codigo: 'No encontramos un hogar con ese código.',
+  clave: 'La contraseña no es correcta.',
+};
+
+// Para quien entra por primera vez a un hogar que ya existe: además del
+// código y la contraseña, deja su nombre para aparecer como integrante
+// (HU-01, acceso compartido sin cuentas individuales).
 export default function UnirseHogar() {
   const router = useRouter();
+  const sesion = useSesion();
+  const freddy = useReaccionFreddy();
   const [codigo, setCodigo] = useState('');
+  const [integrante, setIntegrante] = useState('');
+  const [clave, setClave] = useState('');
+  const [error, setError] = useState<ErrorSesion | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const valido = codigo.trim().length >= 4 && integrante.trim().length >= 2 && clave.length >= 6;
+  const textoEnFoco = freddy.focoId === 'integrante' ? integrante : codigo;
+
+  const unirme = async () => {
+    if (!valido || enviando) return;
+    setEnviando(true);
+    const r = await sesion.unirse(codigo, clave, integrante);
+    if (r.ok) {
+      freddy.celebrar(() => router.replace('/inicio'));
+      return;
+    }
+    setEnviando(false);
+    setError(r.error);
+    freddy.confundir();
+  };
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={type.body}>
-        Pide el código a quien ya administra la despensa de tu casa y
-        escríbelo aquí para ver el mismo inventario que ellos.
-      </Text>
-
-      <View style={styles.campo}>
-        <Text style={styles.etiqueta}>Código de hogar</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Ej. DESP-7F3K"
-          placeholderTextColor={color.inkFaint}
+    <PantallaAcceso
+      titulo="Únete a un hogar"
+      subtitulo="Usa el código y la contraseña que te compartió tu familia."
+      estado={freddy.estado}
+      progreso={textoEnFoco.length / 14}
+    >
+      <Grupo>
+        <Campo
+          icono="llave"
+          placeholder="Código del hogar"
           autoCapitalize="characters"
+          maxLength={12}
           value={codigo}
-          onChangeText={setCodigo}
+          onChangeText={(t) => { setCodigo(t); setError(null); }}
+          returnKeyType="next"
+          {...freddy.enfocar('codigo')}
         />
-      </View>
+        <Campo
+          icono="persona"
+          placeholder="Tu nombre"
+          autoCapitalize="words"
+          value={integrante}
+          onChangeText={setIntegrante}
+          returnKeyType="next"
+          {...freddy.enfocar('integrante')}
+        />
+        <Campo
+          icono="candado"
+          placeholder="Contraseña del hogar"
+          clave
+          claveVisible={freddy.claveVisible}
+          onAlternarClave={freddy.alternarClave}
+          autoCapitalize="none"
+          value={clave}
+          onChangeText={(t) => { setClave(t); setError(null); }}
+          returnKeyType="go"
+          onSubmitEditing={unirme}
+          {...freddy.enfocar('clave', true)}
+        />
+      </Grupo>
+      {error ? (
+        <Nota error>{MENSAJES[error]}</Nota>
+      ) : (
+        <Nota>El código tiene el formato DESP-7F3K. Pídeselo a quien administra la despensa.</Nota>
+      )}
 
-      <Pressable
-        style={[styles.boton, !codigo && styles.botonDeshabilitado]}
-        disabled={!codigo}
-        onPress={() => router.replace('/(tabs)/inventario')}
-      >
-        <Text style={type.button}>Entrar al hogar</Text>
-      </Pressable>
-    </KeyboardAvoidingView>
+      <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+        <Boton titulo="Unirme" deshabilitado={!valido} cargando={enviando} onPress={unirme} />
+        <Boton variante="texto" titulo="Ya soy integrante, iniciar sesión" onPress={() => router.replace('/iniciar-sesion')} />
+      </View>
+    </PantallaAcceso>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.paper, padding: spacing.xl, gap: spacing.lg },
-  campo: { gap: spacing.xs },
-  etiqueta: { ...type.label },
-  input: {
-    backgroundColor: color.surface, borderWidth: 1, borderColor: color.line,
-    borderRadius: 12, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 15.5, color: color.ink,
-  },
-  boton: { backgroundColor: color.brand, paddingVertical: 15, borderRadius: 14, alignItems: 'center', marginTop: spacing.md },
-  botonDeshabilitado: { opacity: 0.5 },
-});
