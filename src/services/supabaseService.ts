@@ -3,13 +3,22 @@ import type { Hogar } from '../state/SesionProvider';
 import type { Producto, ItemFaltante } from '../data/mock';
 import type { Unidad, Categoria, Ubicacion } from '../data/catalogo';
 
-export const isSupabaseConfigured = (): boolean => {
-  const key =
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    '';
-  return key.length > 20;
-};
+export const isSupabaseConfigured = (): boolean => true;
+
+/**
+ * Resuelve el ID del hogar en Supabase por su código.
+ */
+export async function resolverHogarId(codigo: string): Promise<string | null> {
+  const norm = codigo.trim().toUpperCase();
+  const { data, error } = await supabase
+    .from('hogares')
+    .select('id')
+    .or(`codigo.eq.${norm},codigo_invitacion.eq.${norm}`)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data.id;
+}
 
 /**
  * Garantiza que el cliente tenga un auth.uid() anónimo válido y estable.

@@ -7,8 +7,9 @@ const supabaseUrl =
 
 const supabaseAnonKey =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.SUPABASE_PUBLISHABLE_KEY ||
-  '';
+  'sb_publishable_0EGZrnhkNnJ15kgUp4sAHQ_70GLrvzC';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

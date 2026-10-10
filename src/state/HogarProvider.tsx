@@ -8,6 +8,7 @@ import { useSesion } from './SesionProvider';
 import {
   isSupabaseConfigured,
   dbObtenerMiHogar,
+  resolverHogarId,
   dbCargarDespensa,
   dbAgregarProducto,
   dbActualizarProducto,
@@ -68,6 +69,9 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
             const h = await dbObtenerMiHogar();
             if (h) dbId = h.id;
           }
+          if (!dbId && codigo) {
+            dbId = await resolverHogarId(codigo);
+          }
           if (dbId) {
             setHogarDbId(dbId);
             const remota = await dbCargarDespensa(dbId);
@@ -113,44 +117,52 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
     });
   }, [codigo]);
 
+  const obtenerHogarId = useCallback(async (): Promise<string | null> => {
+    if (hogarDbId) return hogarDbId;
+    if (!codigo) return null;
+    const r = await resolverHogarId(codigo);
+    if (r) setHogarDbId(r);
+    return r;
+  }, [hogarDbId, codigo]);
+
   const value = useMemo<HogarState>(() => ({
     ...despensa,
     listo: cargadoDe === codigo,
     agregarProducto: (p) => {
       const id = nuevoId('p');
       actualizar((d) => ({ ...d, productos: [...d.productos, { ...p, id }] }));
-      if (isSupabaseConfigured() && hogarDbId) {
-        dbAgregarProducto(hogarDbId, p).catch((e) => console.warn('Error Supabase agregarProducto:', e));
-      }
+      obtenerHogarId().then((hId) => {
+        if (hId) {
+          dbAgregarProducto(hId, p).catch((e) => console.error('Error Supabase agregarProducto:', e));
+        }
+      });
       return id;
     },
     actualizarProducto: (id, cambios) => {
       actualizar((d) => ({ ...d, productos: d.productos.map((p) => (p.id === id ? { ...cambios, id } : p)) }));
-      if (isSupabaseConfigured()) {
-        dbActualizarProducto(id, cambios).catch((e) => console.warn('Error Supabase actualizarProducto:', e));
-      }
+      dbActualizarProducto(id, cambios).catch((e) => console.warn('Error Supabase actualizarProducto:', e));
     },
     eliminarProducto: (id) => {
       actualizar((d) => ({ ...d, productos: d.productos.filter((p) => p.id !== id) }));
-      if (isSupabaseConfigured()) {
-        dbEliminarProducto(id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
-      }
+      dbEliminarProducto(id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
     },
     marcarAgotado: (id) => {
       actualizar((d) => {
         const p = d.productos.find((x) => x.id === id);
         if (!p) return d;
         const fid = nuevoId('f');
-        if (isSupabaseConfigured() && hogarDbId) {
-          dbEliminarProducto(id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
-          dbAgregarFaltante(hogarDbId, {
-            nombre: p.nombre,
-            cantidad: p.cantidad,
-            unidad: p.unidad,
-            categoria: p.categoria,
-            ubicacion: p.ubicacion,
-          }).catch((e) => console.warn('Error Supabase marcarAgotado:', e));
-        }
+        obtenerHogarId().then((hId) => {
+          if (hId) {
+            dbEliminarProducto(id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
+            dbAgregarFaltante(hId, {
+              nombre: p.nombre,
+              cantidad: p.cantidad,
+              unidad: p.unidad,
+              categoria: p.categoria,
+              ubicacion: p.ubicacion,
+            }).catch((e) => console.warn('Error Supabase marcarAgotado:', e));
+          }
+        });
         return {
           productos: d.productos.filter((x) => x.id !== id),
           faltantes: [
@@ -173,36 +185,38 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
         ...d,
         faltantes: [...d.faltantes, { id: fid, nombre: nombre.trim(), cantidad, unidad }],
       }));
-      if (isSupabaseConfigured() && hogarDbId) {
-        dbAgregarFaltante(hogarDbId, { nombre: nombre.trim(), cantidad, unidad }).catch((e) =>
-          console.warn('Error Supabase agregarFaltante:', e)
-        );
-      }
+      obtenerHogarId().then((hId) => {
+        if (hId) {
+          dbAgregarFaltante(hId, { nombre: nombre.trim(), cantidad, unidad }).catch((e) =>
+            console.warn('Error Supabase agregarFaltante:', e)
+          );
+        }
+      });
     },
     quitarFaltante: (id) => {
       actualizar((d) => ({ ...d, faltantes: d.faltantes.filter((f) => f.id !== id) }));
-      if (isSupabaseConfigured()) {
-        dbEliminarFaltante(id).catch((e) => console.warn('Error Supabase quitarFaltante:', e));
-      }
+      dbEliminarFaltante(id).catch((e) => console.warn('Error Supabase quitarFaltante:', e));
     },
     terminarCompra: (ids) => {
       actualizar((d) => {
         const compradas = d.faltantes.filter((f) => ids.includes(f.id));
-        if (isSupabaseConfigured() && hogarDbId) {
-          dbEliminarFaltantes(ids).catch((e) => console.warn('Error Supabase eliminarFaltantes:', e));
-          compradas.forEach((f) => {
-            dbAgregarProducto(hogarDbId, {
-              nombre: f.nombre,
-              categoria: f.categoria ?? 'Otros',
-              ubicacion: f.ubicacion ?? 'Alacena',
-              cantidad: f.cantidad,
-              unidad: f.unidad,
-              fechaCompra: hoyISO(),
-              fechaCaducidad: null,
-              notas: '',
-            }).catch((e) => console.warn('Error Supabase agregarProducto (compra):', e));
-          });
-        }
+        obtenerHogarId().then((hId) => {
+          if (hId) {
+            dbEliminarFaltantes(ids).catch((e) => console.warn('Error Supabase eliminarFaltantes:', e));
+            compradas.forEach((f) => {
+              dbAgregarProducto(hId, {
+                nombre: f.nombre,
+                categoria: f.categoria ?? 'Otros',
+                ubicacion: f.ubicacion ?? 'Alacena',
+                cantidad: f.cantidad,
+                unidad: f.unidad,
+                fechaCompra: hoyISO(),
+                fechaCaducidad: null,
+                notas: '',
+              }).catch((e) => console.warn('Error Supabase agregarProducto (compra):', e));
+            });
+          }
+        });
         return {
           faltantes: d.faltantes.filter((f) => !ids.includes(f.id)),
           productos: [
@@ -224,7 +238,7 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
         };
       });
     },
-  }), [despensa, cargadoDe, codigo, hogarDbId, actualizar]);
+  }), [despensa, cargadoDe, codigo, obtenerHogarId, actualizar]);
 
   return <HogarContext.Provider value={value}>{children}</HogarContext.Provider>;
 }
