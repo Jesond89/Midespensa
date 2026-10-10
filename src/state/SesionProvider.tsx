@@ -8,7 +8,21 @@ import { hogarMock } from '../data/mock';
 // las pantallas solo usan crearHogar / iniciarSesion / unirse / cerrarSesion.
 // OJO: la contraseña se guarda en texto plano; aceptable solo para el prototipo.
 
-export type Hogar = { nombre: string; codigo: string; clave: string; integrantes: string[] };
+import {
+  isSupabaseConfigured,
+  dbCrearHogar,
+  dbUnirseHogar,
+  dbObtenerMiHogar,
+} from '../services/supabaseService';
+
+export type Hogar = {
+  id?: string;
+  nombre: string;
+  codigo: string;
+  clave: string;
+  integrantes: string[];
+  rol?: 'admin' | 'miembro';
+};
 export type ErrorSesion = 'codigo' | 'clave';
 type Resultado = { ok: true } | { ok: false; error: ErrorSesion };
 
@@ -25,7 +39,7 @@ const CLAVE_HOGARES = 'midespensa.hogares';
 const CLAVE_SESION = 'midespensa.sesion';
 
 // Hogar de demostración para probar el inicio de sesión: DESP-7F3K / 123456.
-const HOGAR_DEMO: Hogar = { ...hogarMock, clave: '123456' };
+const HOGAR_DEMO: Hogar = { ...hogarMock, clave: '123456', rol: 'admin' };
 
 const SesionContext = createContext<SesionState | null>(null);
 
@@ -48,9 +62,16 @@ export function SesionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
+        if (isSupabaseConfigured()) {
+          const remoto = await dbObtenerMiHogar();
+          if (remoto) {
+            setHogares((prev) => [...prev.filter((h) => h.codigo !== remoto.codigo), remoto]);
+            setCodigoSesion(remoto.codigo);
+          }
+        }
         const [h, s] = await Promise.all([AsyncStorage.getItem(CLAVE_HOGARES), AsyncStorage.getItem(CLAVE_SESION)]);
         if (h) setHogares(JSON.parse(h));
-        if (s) setCodigoSesion(s);
+        if (s && !codigoSesion) setCodigoSesion(s);
       } catch {
         // Sin almacenamiento disponible: se trabaja solo en memoria.
       } finally {
@@ -72,7 +93,7 @@ export function SesionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<SesionState>(() => {
-    const validar = (codigo: string, clave: string): Resultado & { hogar?: Hogar } => {
+    const validarLocal = (codigo: string, clave: string): Resultado & { hogar?: Hogar } => {
       const hogar = hogares.find((h) => h.codigo === normalizar(codigo));
       if (!hogar) return { ok: false, error: 'codigo' };
       if (hogar.clave !== clave) return { ok: false, error: 'clave' };
@@ -83,22 +104,68 @@ export function SesionProvider({ children }: { children: React.ReactNode }) {
       listo,
       hogar: hogares.find((h) => h.codigo === codigoSesion) ?? null,
       crearHogar: async (nombre, clave) => {
-        const hogar: Hogar = { nombre: nombre.trim(), codigo: generarCodigo(hogares), clave, integrantes: [] };
-        await guardar([...hogares, hogar], hogar.codigo);
-        return hogar;
+        const cod = generarCodigo(hogares);
+        let nuevoHogar: Hogar = { nombre: nombre.trim(), codigo: cod, clave, integrantes: [], rol: 'admin' };
+
+        if (isSupabaseConfigured()) {
+          try {
+            const dbHogar = await dbCrearHogar(nombre, 'Admin', cod);
+            nuevoHogar = { ...nuevoHogar, id: dbHogar.id, codigo: dbHogar.codigo, rol: dbHogar.rol };
+          } catch (e) {
+            console.warn('Error al guardar hogar en Supabase, usando local:', e);
+          }
+        }
+
+        await guardar([...hogares, nuevoHogar], nuevoHogar.codigo);
+        return nuevoHogar;
       },
       iniciarSesion: async (codigo, clave) => {
-        const r = validar(codigo, clave);
+        const codNormalizado = normalizar(codigo);
+
+        if (isSupabaseConfigured()) {
+          try {
+            const unido = await dbUnirseHogar(codNormalizado, 'Miembro');
+            if (unido) {
+              const otros = hogares.filter((h) => h.codigo !== codNormalizado);
+              await guardar([...otros, unido], unido.codigo);
+              return { ok: true };
+            }
+          } catch (e) {
+            console.warn('Error al iniciar sesión con Supabase, intentando local:', e);
+          }
+        }
+
+        const r = validarLocal(codigo, clave);
         if (r.ok && r.hogar) await guardar(hogares, r.hogar.codigo);
         return r.ok ? { ok: true } : r;
       },
       unirse: async (codigo, clave, integrante) => {
-        const r = validar(codigo, clave);
+        const codNormalizado = normalizar(codigo);
+        const nombreInt = integrante.trim();
+
+        if (isSupabaseConfigured()) {
+          try {
+            const unido = await dbUnirseHogar(codNormalizado, nombreInt);
+            if (unido) {
+              const actualizados = [
+                ...hogares.filter((h) => h.codigo !== codNormalizado),
+                unido,
+              ];
+              await guardar(actualizados, unido.codigo);
+              return { ok: true };
+            }
+          } catch (e) {
+            console.warn('Error al unirse vía Supabase, usando local:', e);
+          }
+        }
+
+        const r = validarLocal(codigo, clave);
         if (!r.ok || !r.hogar) return r;
-        const nombre = integrante.trim();
-        const actualizados = hogares.map((h) => (h.codigo === r.hogar!.codigo && !h.integrantes.includes(nombre)
-          ? { ...h, integrantes: [...h.integrantes, nombre] }
-          : h));
+        const actualizados = hogares.map((h) =>
+          h.codigo === r.hogar!.codigo && !h.integrantes.includes(nombreInt)
+            ? { ...h, integrantes: [...h.integrantes, nombreInt] }
+            : h
+        );
         await guardar(actualizados, r.hogar.codigo);
         return { ok: true };
       },
