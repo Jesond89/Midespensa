@@ -4,7 +4,11 @@ import type { Producto, ItemFaltante } from '../data/mock';
 import type { Unidad, Categoria, Ubicacion } from '../data/catalogo';
 
 export const isSupabaseConfigured = (): boolean => {
-  return !!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY.length > 20;
+  const key =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    '';
+  return key.length > 20;
 };
 
 /**
