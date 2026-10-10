@@ -1,11 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { EsquemaEscaneo } from '../../src/servicios/esquemaEscaneo';
+import { EsquemaEscaneo } from '../../src/services/esquemaEscaneo';
 
 // POST /api/reconocer — recibe una foto de las compras o de la alacena y
 // devuelve la lista de productos que se ven, para que el usuario la revise
 // antes de guardarla. Corre en el servidor: la clave de Anthropic
-// (ANTHROPIC_API_KEY, en .env.local) nunca llega al teléfono.
+// (ANTHROPIC_API_KEY, en .env) nunca llega al teléfono.
 
 const MODELO = 'claude-opus-5-5';
 const TIPOS = ['image/jpeg', 'image/png', 'image/webp'] as const;

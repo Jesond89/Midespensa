@@ -16,7 +16,7 @@ import { useHogar } from '../../../src/state/HogarProvider';
 import { usePreferencias } from '../../../src/state/PreferenciasProvider';
 import { useCatalogo } from '../../../src/state/CatalogoProvider';
 import { DEFECTOS_POR_CATEGORIA } from '../../../src/data/productos';
-import { ErrorEscaneo, prepararFoto, reconocerProductos } from '../../../src/servicios/reconocer';
+import { ErrorEscaneo, prepararFoto, reconocerProductos } from '../../../src/services/reconocer';
 import { BuscadorProductos, ProductoAAgregar } from '../../../src/components/registro/BuscadorProductos';
 import { hoyISO, sumarDias } from '../../../src/utils/fechas';
 import { ui, spacing } from '../../../src/theme/tokens';
