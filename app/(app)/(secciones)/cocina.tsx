@@ -6,12 +6,12 @@ import { useHogar } from '../../../src/state/HogarProvider';
 import { recetasMock } from '../../../src/data/mock';
 import { estaPorCaducar } from '../../../src/utils/caducidad';
 import { ui, spacing } from '../../../src/theme/tokens';
-import { useEspacioBarra } from '../../../src/theme/navegacion';
+import { useEspacioInferior } from '../../../src/theme/navegacion';
 
 // RF-08 / HU-04. La generación real vendrá del backend + Gemini; aquí se
 // deja la interacción completa con datos de prueba, marcada como tal.
 export default function Cocina() {
-  const espacioBarra = useEspacioBarra();
+  const espacioInferior = useEspacioInferior();
   const { productos } = useHogar();
   const [cargando, setCargando] = useState(false);
   const [mostrarRecetas, setMostrarRecetas] = useState(false);
@@ -23,7 +23,7 @@ export default function Cocina() {
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioBarra + spacing.lg }]}>
+    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioInferior + spacing.lg }]}>
       <View style={styles.intro}>
         <Icono nombre="olla" tamano={34} color={ui.texto} />
         <Text style={styles.titulo}>Ideas con lo que ya tienes</Text>

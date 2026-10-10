@@ -12,15 +12,10 @@ export const opcionesEncabezado = {
   contentStyle: { backgroundColor: ui.fondo },
 };
 
-// Barra de pestañas flotante (src/components/ui/BarraFlotante.tsx): cápsula
-// de ALTO_BARRA separada del borde inferior. En equipos sin área segura
-// (web, Android con botones) se deja un margen mínimo.
-export const ALTO_BARRA = 64;
-export const margenBarra = (insetInferior: number) => Math.max(insetInferior, 14);
-
-// Espacio que deben dejar abajo las pantallas con pestañas para que su
-// contenido no quede detrás de la barra. Freddy flotante se coloca encima.
-export function useEspacioBarra() {
+// Espacio que dejan abajo las pantallas para no pegarse al borde ni al
+// indicador de inicio. En equipos sin área segura (web, Android con
+// botones) se deja un margen mínimo. Freddy flotante se coloca encima.
+export function useEspacioInferior() {
   const { bottom } = useSafeAreaInsets();
-  return margenBarra(bottom) + ALTO_BARRA;
+  return Math.max(bottom, 16);
 }

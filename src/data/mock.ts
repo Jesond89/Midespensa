@@ -53,8 +53,6 @@ export function productosDemo(): Producto[] {
     p('p11', 'Aceite vegetal', 'Abarrotes', 'Alacena', 1, 'L', -30, 90),
     p('p12', 'Pechuga de pollo', 'Carnes y pescado', 'Congelador', 1, 'kg', -6, 45),
     p('p13', 'Verduras mixtas', 'Congelados', 'Congelador', 500, 'g', -10, 60),
-    p('p14', 'Detergente líquido', 'Limpieza', 'Lavandería', 1, 'L', -12, null),
-    p('p15', 'Papel higiénico', 'Higiene personal', 'Baño', 12, 'rollo', -8, null),
   ];
 }
 

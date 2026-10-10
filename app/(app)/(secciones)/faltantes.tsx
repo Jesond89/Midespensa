@@ -5,13 +5,13 @@ import { Grupo, Campo, Boton, Nota, Seccion } from '../../../src/components/ui/F
 import { Vacio } from '../../../src/components/ui/Lista';
 import { useHogar } from '../../../src/state/HogarProvider';
 import { ui, spacing } from '../../../src/theme/tokens';
-import { useEspacioBarra } from '../../../src/theme/navegacion';
+import { useEspacioInferior } from '../../../src/theme/navegacion';
 import { cantidadTexto } from '../../../src/utils/cantidad';
 
 // Lista de compras: lo que se marcó como agotado más lo que se agregue a
 // mano. Al terminar la compra, lo marcado pasa a la despensa con fecha de hoy.
 export default function Faltantes() {
-  const espacioBarra = useEspacioBarra();
+  const espacioInferior = useEspacioInferior();
   const { faltantes, agregarFaltante, quitarFaltante, terminarCompra } = useHogar();
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
   const [nuevo, setNuevo] = useState('');
@@ -32,7 +32,7 @@ export default function Faltantes() {
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioBarra + spacing.lg }]} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioInferior + spacing.lg }]} keyboardShouldPersistTaps="handled">
       <Grupo>
         <View style={styles.agregar}>
           <View style={{ flex: 1 }}>

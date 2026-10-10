@@ -1,7 +1,7 @@
 import type { NombreIcono as Icono } from '../components/ui/Icono';
 
 // Catálogo fijo de opciones para registrar cualquier cosa de la casa:
-// comida, limpieza o higiene. Cada opción trae su ícono para las listas.
+// comida y bebida. Cada opción trae su ícono para las listas.
 
 export const CATEGORIAS = [
   { nombre: 'Frutas', icono: 'manzana' },
@@ -13,8 +13,6 @@ export const CATEGORIAS = [
   { nombre: 'Abarrotes', icono: 'caja' },
   { nombre: 'Bebidas', icono: 'taza' },
   { nombre: 'Congelados', icono: 'copo' },
-  { nombre: 'Limpieza', icono: 'chispas' },
-  { nombre: 'Higiene personal', icono: 'jabon' },
   { nombre: 'Otros', icono: 'etiqueta' },
 ] as const satisfies readonly { nombre: string; icono: Icono }[];
 
@@ -23,11 +21,9 @@ export const UBICACIONES = [
   { nombre: 'Congelador', icono: 'copo' },
   { nombre: 'Alacena', icono: 'alacena' },
   { nombre: 'Frutero', icono: 'frutero' },
-  { nombre: 'Lavandería', icono: 'lavadora' },
-  { nombre: 'Baño', icono: 'gota' },
 ] as const satisfies readonly { nombre: string; icono: Icono }[];
 
-export const UNIDADES = ['pieza', 'kg', 'g', 'L', 'ml', 'paquete', 'docena', 'lata', 'rollo'] as const;
+export const UNIDADES = ['pieza', 'kg', 'g', 'L', 'ml', 'paquete', 'docena', 'lata', 'frasco', 'manojo'] as const;
 
 export type Categoria = (typeof CATEGORIAS)[number]['nombre'];
 export type Ubicacion = (typeof UBICACIONES)[number]['nombre'];
