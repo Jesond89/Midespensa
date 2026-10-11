@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EsquemaEscaneo } from '../../src/services/esquemaEscaneo';
+import { autenticar } from '../../src/server/auth';
 
 // POST /api/reconocer — recibe una foto de las compras o de la alacena y
 // devuelve la lista de productos que se ven, para que el usuario la revise
@@ -30,6 +31,12 @@ function error(codigo: string, status: number) {
 }
 
 export async function POST(request: Request) {
+  // Solo hogares con sesión (JWT de acceso vigente) pueden usar el escaneo.
+  try {
+    if (!autenticar(request)) return error('no-autorizado', 401);
+  } catch {
+    return error('sin-configurar', 503);
+  }
   if (!process.env.ANTHROPIC_API_KEY) return error('sin-clave', 503);
 
   let imagen: unknown;

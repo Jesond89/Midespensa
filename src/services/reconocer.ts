@@ -1,5 +1,6 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { ResultadoEscaneo } from './esquemaEscaneo';
+import { fetchAutenticado } from './auth';
 
 // Escaneo de compras desde la app: reduce la foto (el modelo no gana nada
 // con más de ~1568 px por lado y así se envía rápido) y la manda a la ruta
@@ -17,6 +18,8 @@ const MENSAJES: Record<string, string> = {
   'imagen-invalida': 'No se pudo leer la foto. Intenta con otra.',
   'rechazo': 'No se pudo analizar esta foto. Intenta con otra o agrégalos a mano.',
   'sin-conexion': 'No hay conexión con el servicio de escaneo. Revisa tu internet.',
+  'no-autorizado': 'Tu sesión venció. Vuelve a iniciar sesión para escanear.',
+  'sin-configurar': 'El servidor todavía no está configurado. Mientras, agrégalos a mano.',
 };
 const GENERICO = 'No se pudo analizar la foto. Intenta de nuevo o agrégalos a mano.';
 
@@ -36,7 +39,7 @@ export async function prepararFoto(uri: string, ancho: number, alto: number) {
 export async function reconocerProductos(base64: string): Promise<ResultadoEscaneo> {
   let respuesta: Response;
   try {
-    respuesta = await fetch('/api/reconocer', {
+    respuesta = await fetchAutenticado('/api/reconocer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagen: base64, tipo: 'image/jpeg' }),

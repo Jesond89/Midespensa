@@ -4,13 +4,8 @@ import { useRouter } from 'expo-router';
 import {
   PantallaAcceso, Grupo, Campo, Boton, Nota, useReaccionFreddy,
 } from '../src/components/ui/Formulario';
-import { ErrorSesion, useSesion } from '../src/state/SesionProvider';
+import { ErrorSesion, mensajeError, useSesion } from '../src/state/SesionProvider';
 import { spacing } from '../src/theme/tokens';
-
-const MENSAJES: Record<ErrorSesion, string> = {
-  codigo: 'No encontramos un hogar con ese código.',
-  clave: 'La contraseña no es correcta.',
-};
 
 // Para quien entra por primera vez a un hogar que ya existe: además del
 // código y la contraseña, deja su nombre para aparecer como integrante
@@ -22,7 +17,7 @@ export default function UnirseHogar() {
   const [codigo, setCodigo] = useState('');
   const [integrante, setIntegrante] = useState('');
   const [clave, setClave] = useState('');
-  const [error, setError] = useState<ErrorSesion | null>(null);
+  const [error, setError] = useState<{ tipo: ErrorSesion; reintentarEn?: number } | null>(null);
   const [enviando, setEnviando] = useState(false);
 
   const valido = codigo.trim().length >= 4 && integrante.trim().length >= 2 && clave.length >= 6;
@@ -37,7 +32,7 @@ export default function UnirseHogar() {
       return;
     }
     setEnviando(false);
-    setError(r.error);
+    setError({ tipo: r.error, reintentarEn: r.reintentarEn });
     freddy.confundir();
   };
 
@@ -83,7 +78,7 @@ export default function UnirseHogar() {
         />
       </Grupo>
       {error ? (
-        <Nota error>{MENSAJES[error]}</Nota>
+        <Nota error>{mensajeError(error.tipo, error.reintentarEn)}</Nota>
       ) : (
         <Nota>El código tiene el formato DESP-7F3K. Pídeselo a quien administra la despensa.</Nota>
       )}

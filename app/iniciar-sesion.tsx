@@ -4,23 +4,18 @@ import { useRouter } from 'expo-router';
 import {
   PantallaAcceso, Grupo, Campo, Boton, Nota, useReaccionFreddy,
 } from '../src/components/ui/Formulario';
-import { ErrorSesion, useSesion } from '../src/state/SesionProvider';
+import { ErrorSesion, mensajeError, useSesion } from '../src/state/SesionProvider';
 import { spacing } from '../src/theme/tokens';
 
-const MENSAJES: Record<ErrorSesion, string> = {
-  codigo: 'No encontramos un hogar con ese código.',
-  clave: 'La contraseña no es correcta.',
-};
-
-// Inicio de sesión de un hogar existente: código + contraseña,
-// validados contra los hogares guardados en el dispositivo (SesionProvider).
+// Inicio de sesión de un hogar existente: código + contraseña, validados en
+// el servidor (bcrypt). Tras 5 intentos fallidos el hogar se bloquea 15 min.
 export default function IniciarSesion() {
   const router = useRouter();
   const sesion = useSesion();
   const freddy = useReaccionFreddy();
   const [codigo, setCodigo] = useState('');
   const [clave, setClave] = useState('');
-  const [error, setError] = useState<ErrorSesion | null>(null);
+  const [error, setError] = useState<{ tipo: ErrorSesion; reintentarEn?: number } | null>(null);
   const [enviando, setEnviando] = useState(false);
 
   const valido = codigo.trim().length >= 4 && clave.length >= 6;
@@ -34,7 +29,7 @@ export default function IniciarSesion() {
       return;
     }
     setEnviando(false);
-    setError(r.error);
+    setError({ tipo: r.error, reintentarEn: r.reintentarEn });
     freddy.confundir();
   };
 
@@ -71,7 +66,7 @@ export default function IniciarSesion() {
         />
       </Grupo>
       {error ? (
-        <Nota error>{MENSAJES[error]}</Nota>
+        <Nota error>{mensajeError(error.tipo, error.reintentarEn)}</Nota>
       ) : (
         <Nota>¿Olvidaste la contraseña? Pídela a quien creó el hogar. Para probar usa DESP-7F3K y 123456.</Nota>
       )}
