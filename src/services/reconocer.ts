@@ -1,17 +1,19 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { ResultadoEscaneo } from './esquemaEscaneo';
 
-// Escaneo de compras desde la app: reduce la foto (el modelo no gana nada
-// con más de ~1568 px por lado y así se envía rápido) y la manda a la ruta
+// Escaneo de compras desde la app: reduce la foto (a 768 px por lado Gemini
+// cobra pocos tokens por imagen y las etiquetas aún se leen; así también se envía rápido) y la manda a la ruta
 // de servidor /api/reconocer, que es la única que conoce la clave.
 
-const LADO_MAX = 1568;
+const LADO_MAX = 768;
 
 export class ErrorEscaneo extends Error {}
 
 const MENSAJES: Record<string, string> = {
   'sin-clave': 'El escaneo todavía no está configurado en el servidor. Mientras, agrégalos a mano.',
   'clave-invalida': 'La clave del escaneo no es válida. Mientras, agrégalos a mano.',
+  'no-autorizado': 'Tu hogar no está registrado en el servidor. Inicia sesión de nuevo.',
+  'limite': 'Llegaste al límite de escaneos por ahora. Intenta más tarde o agrégalos a mano.',
   'ocupado': 'El escaneo está ocupado. Espera unos segundos y vuelve a intentar.',
   'imagen-grande': 'La foto es demasiado pesada. Intenta con otra.',
   'imagen-invalida': 'No se pudo leer la foto. Intenta con otra.',
@@ -27,18 +29,18 @@ export async function prepararFoto(uri: string, ancho: number, alto: number) {
     contexto.resize(ancho >= alto ? { width: LADO_MAX, height: null } : { width: null, height: LADO_MAX });
   }
   const imagen = await contexto.renderAsync();
-  const resultado = await imagen.saveAsync({ format: SaveFormat.JPEG, compress: 0.7, base64: true });
+  const resultado = await imagen.saveAsync({ format: SaveFormat.JPEG, compress: 0.6, base64: true });
   if (!resultado.base64) throw new ErrorEscaneo('No se pudo preparar la foto.');
   return { uri: resultado.uri, base64: resultado.base64 };
 }
 
 /** Pide al servidor los productos que se ven en la foto. */
-export async function reconocerProductos(base64: string): Promise<ResultadoEscaneo> {
+export async function reconocerProductos(base64: string, codigoHogar: string): Promise<ResultadoEscaneo> {
   let respuesta: Response;
   try {
     respuesta = await fetch('/api/reconocer', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-hogar-codigo': codigoHogar },
       body: JSON.stringify({ imagen: base64, tipo: 'image/jpeg' }),
     });
   } catch {

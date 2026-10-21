@@ -16,6 +16,7 @@ import { useHogar } from '../../../src/state/HogarProvider';
 import { usePreferencias } from '../../../src/state/PreferenciasProvider';
 import { useCatalogo } from '../../../src/state/CatalogoProvider';
 import { DEFECTOS_POR_CATEGORIA } from '../../../src/data/productos';
+import { useSesion } from '../../../src/state/SesionProvider';
 import { ErrorEscaneo, prepararFoto, reconocerProductos } from '../../../src/services/reconocer';
 import { BuscadorProductos, ProductoAAgregar } from '../../../src/components/registro/BuscadorProductos';
 import { hoyISO, sumarDias } from '../../../src/utils/fechas';
@@ -87,6 +88,7 @@ export default function RegistrarCompras() {
   const { width } = useWindowDimensions();
   const { agregarProducto, productos } = useHogar();
   const { prefs } = usePreferencias();
+  const { hogar } = useSesion();
   const catalogo = useCatalogo();
   const [permiso, pedirPermiso] = useCameraPermissions();
   const camara = useRef<CameraView>(null);
@@ -119,7 +121,7 @@ export default function RegistrarCompras() {
     setAnalizando(true);
     try {
       const preparada = await prepararFoto(uri, ancho, alto);
-      const resultado = await reconocerProductos(preparada.base64);
+      const resultado = await reconocerProductos(preparada.base64, hogar?.codigo ?? '');
       const nuevos: Borrador[] = resultado.productos.map((p) => ({
         clave: nuevaClave(),
         incluir: true,

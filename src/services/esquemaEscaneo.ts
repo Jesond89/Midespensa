@@ -19,7 +19,7 @@ export const EsquemaEscaneo = z.object({
       dias_caducidad: z.number().int().nullable().describe('Días aproximados que dura sin abrir desde hoy; null si prácticamente no caduca (sal, azúcar, vinagre).'),
       confianza: z.enum(['alta', 'media', 'baja']),
     }),
-  ),
+  ).max(40),
   aviso: z.string().nullable().describe('Algo que el usuario deba saber de la foto (borrosa, oscura, sin productos); null si todo bien.'),
 });
 
