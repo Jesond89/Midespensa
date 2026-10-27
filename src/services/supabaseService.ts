@@ -24,73 +24,9 @@ export async function resolverHogarId(codigo: string): Promise<string | null> {
 }
 
 /**
- * NO requiere auth. Crea un hogar directamente.
- */
-export async function dbCrearHogar(
-  nombre: string,
-  nombreMostrado: string,
-  codigo?: string
-): Promise<Hogar & { id: string; rol: 'admin' | 'miembro' }> {
-  const codigoFinal = (codigo?.trim() || generarCodigoAleatorio()).toUpperCase();
-
-  const { data, error } = await supabase
-    .from('hogares')
-    .insert({
-      nombre: nombre.trim(),
-      codigo: codigoFinal,          // columna NOT NULL
-      codigo_invitacion: codigoFinal,
-      clave: '',                     // requerida por schema (NOT NULL)
-    })
-    .select('id, nombre, codigo_invitacion')
-    .single();
-
-  if (error || !data) {
-    throw new Error(error?.message || 'Error al crear el hogar');
-  }
-
-  return {
-    id: data.id,
-    codigo: data.codigo_invitacion,
-    nombre: data.nombre,
-    clave: '',
-    rol: 'admin',
-    integrantes: [nombreMostrado || 'Admin'],
-  };
-}
-
-/**
- * NO requiere auth. Une al usuario a un hogar por código.
- */
-export async function dbUnirseHogar(
-  codigo: string,
-  nombreMostrado: string
-): Promise<Hogar & { id: string; rol: 'admin' | 'miembro' }> {
-  const norm = codigo.trim().toUpperCase();
-
-  const { data, error } = await supabase
-    .from('hogares')
-    .select('id, nombre, codigo_invitacion')
-    .eq('codigo_invitacion', norm)
-    .maybeSingle();
-
-  if (error || !data) {
-    throw new Error('Código de hogar no encontrado');
-  }
-
-  return {
-    id: data.id,
-    codigo: data.codigo_invitacion,
-    nombre: data.nombre,
-    clave: '',
-    rol: 'miembro',
-    integrantes: [nombreMostrado || 'Miembro'],
-  };
-}
-
-/**
  * NO requiere auth. Obtiene el hogar por código guardado localmente.
  */
-export async function dbObtenerMiHogar(): Promise<(Hogar & { id: string; rol: 'admin' | 'miembro' }) | null> {
+export async function dbObtenerMiHogar(): Promise<Hogar | null> {
   // Sin auth, no podemos saber qué hogar es "del usuario"
   // Esta función retorna null; el provider usa el codigo guardado en AsyncStorage
   return null;
@@ -217,10 +153,4 @@ export async function dbEliminarFaltante(id: string): Promise<void> {
 export async function dbEliminarFaltantes(ids: string[]): Promise<void> {
   const { error } = await supabase.from('faltantes').delete().in('id', ids);
   if (error) console.warn('dbEliminarFaltantes error:', error.message);
-}
-
-// Helper interno
-function generarCodigoAleatorio(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return 'DESP-' + Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }

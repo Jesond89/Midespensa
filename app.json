@@ -36,7 +36,8 @@
         {
           "photosPermission": "Mi Despensa usa tus fotos para escanear tus compras y registrarlas."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "newArchEnabled": true
   }
