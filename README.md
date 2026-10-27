@@ -72,6 +72,19 @@ acceso con el código y la contraseña del hogar — ver Fase 1):
 - "Login" → **Iniciar sesión** (código + contraseña) y **Unirse a un hogar**
 - Las contraseñas se guardan en texto plano: válido solo para el prototipo.
 
+## Seguridad de acceso
+
+- **Contraseñas**: se guardan con hash **bcrypt (costo 12)** dentro de Supabase
+  (`pgcrypto`); la app no puede leer la columna `clave`. Tras 5 intentos
+  fallidos el hogar se bloquea 15 minutos.
+- **Sesión**: al entrar, el servidor (`app/api/auth/*`) entrega un **JWT de
+  acceso HS256 de 15 minutos** (solo en memoria) y un **refresh token opaco de
+  30 días** (en SecureStore del teléfono / localStorage en web). Cada refresco
+  rota el token; si se reutiliza uno ya usado se revoca toda la sesión.
+- **Configuración** (una sola vez):
+  1. Ejecuta `supabase/migrations/001_seguridad_auth.sql` en Supabase → SQL Editor.
+  2. Define `JWT_SECRET` en `.env` (ver `.env.example`) y en el servidor donde se despliegue.
+
 ## Notas
 - No subas `node_modules/` (ya está en `.gitignore`); cada quien corre
   `npm install --legacy-peer-deps` localmente (el flag es obligatorio: Expo SDK 57 trae un conflicto de peer-deps entre react y react-dom).

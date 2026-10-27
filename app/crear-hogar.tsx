@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import {
   PantallaAcceso, Grupo, Campo, Boton, Nota, useReaccionFreddy,
 } from '../src/components/ui/Formulario';
-import { Hogar, useSesion } from '../src/state/SesionProvider';
+import { Hogar, mensajeError, useSesion } from '../src/state/SesionProvider';
 import { ui, spacing } from '../src/theme/tokens';
 
 // Reemplaza el "Registro" genérico de la plantilla de la materia: aquí no
@@ -19,6 +19,7 @@ export default function CrearHogar() {
   const [confirmar, setConfirmar] = useState('');
   const [creado, setCreado] = useState<Hogar | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [errorServidor, setErrorServidor] = useState<string | null>(null);
 
   const claveCorta = clave.length > 0 && clave.length < 6;
   const noCoinciden = confirmar.length > 0 && confirmar !== clave;
@@ -27,8 +28,15 @@ export default function CrearHogar() {
   const crear = async () => {
     if (!valido || enviando) return;
     setEnviando(true);
-    const hogar = await sesion.crearHogar(nombre, clave);
-    freddy.celebrar(() => setCreado(hogar));
+    setErrorServidor(null);
+    const r = await sesion.crearHogar(nombre, clave);
+    if (!r.ok) {
+      setEnviando(false);
+      setErrorServidor(mensajeError(r.error, r.reintentarEn));
+      freddy.confundir();
+      return;
+    }
+    freddy.celebrar(() => setCreado(r.hogar));
   };
 
   if (creado) {
@@ -97,7 +105,9 @@ export default function CrearHogar() {
           {...freddy.enfocar('confirmar', true)}
         />
       </Grupo>
-      {noCoinciden ? (
+      {errorServidor ? (
+        <Nota error>{errorServidor}</Nota>
+      ) : noCoinciden ? (
         <Nota error>Las contraseñas no coinciden.</Nota>
       ) : (
         <Nota error={claveCorta}>Usa al menos 6 caracteres.</Nota>

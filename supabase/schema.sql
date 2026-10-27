@@ -1,6 +1,8 @@
 -- =========================================================================
 -- Mi Despensa — Arquitectura Backend (Multi-tenant y Roles)
 -- Autenticación anónima + miembros_hogar + Row Level Security (RLS)
+-- IMPORTANTE: después de este archivo ejecuta supabase/migrations/001_seguridad_auth.sql
+-- (hash bcrypt de contraseñas, refresh tokens y permisos de la columna clave).
 -- =========================================================================
 
 -- 1. HOGARES

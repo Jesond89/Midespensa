@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EsquemaEscaneo } from '../../src/services/esquemaEscaneo';
-import { supabase } from '../../src/lib/supabase';
+import { autenticar } from '../../src/server/auth';
 
 // POST /api/reconocer — recibe una foto de las compras o de la alacena y
 // devuelve la lista de productos que se ven, para que el usuario la revise
@@ -16,21 +16,11 @@ type TipoImagen = (typeof TIPOS)[number];
 const MAX_BYTES = 500 * 1024;
 const MAX_SALIDA_TOKENS = 2048;
 
-// Acceso: la app todavía no usa Supabase Auth, así que la "sesión" es el hogar.
-// La app manda su código de hogar y el servidor comprueba que exista en Supabase
-// antes de gastar cuota de Gemini. Además hay un límite de escaneos por hogar (10 al día).
-const FORMATO_CODIGO = /^DESP-[A-Z0-9]{4}$/;
+// Acceso: solo hogares con sesión iniciada (JWT de acceso vigente, emitido por
+// /api/auth/*). El token prueba a qué hogar pertenece quien escanea, así que
+// aquí ya no hace falta consultar Supabase. Además hay un límite diario por hogar.
 const LIMITE_POR_DIA = 10;
-const hogaresValidos = new Map<string, number>(); // codigo -> expira (ms)
 const usos = new Map<string, { n: number; reinicia: number }>();
-
-async function hogarExiste(codigo: string) {
-  if ((hogaresValidos.get(codigo) ?? 0) > Date.now()) return true;
-  const { data, error } = await supabase.from('hogares').select('id').eq('codigo_invitacion', codigo).maybeSingle();
-  if (error || !data) return false;
-  hogaresValidos.set(codigo, Date.now() + 5 * 60 * 1000);
-  return true;
-}
 
 function dentroDelLimite(codigo: string) {
   const ahora = Date.now();
@@ -62,9 +52,15 @@ export async function POST(request: Request) {
   const clave = process.env.GEMINI_API_KEY;
   if (!clave) return error('sin-clave', 503);
 
-  const codigo = (request.headers.get('x-hogar-codigo') ?? '').trim().toUpperCase();
-  if (!FORMATO_CODIGO.test(codigo) || !(await hogarExiste(codigo))) return error('no-autorizado', 401);
-  if (!dentroDelLimite(codigo)) return error('limite', 429);
+  let hogarId: string;
+  try {
+    const sesion = autenticar(request);
+    if (!sesion) return error('no-autorizado', 401);
+    hogarId = sesion.sub;
+  } catch {
+    return error('sin-configurar', 503);
+  }
+  if (!dentroDelLimite(hogarId)) return error('limite', 429);
 
   // Rechaza cuerpos enormes antes de leerlos (base64 pesa ~1.37x el archivo).
   const largo = Number(request.headers.get('content-length') ?? 0);

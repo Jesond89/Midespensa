@@ -16,6 +16,7 @@
     "expo-image-picker": "~57.0.20",
     "expo-linking": "^57.0.12",
     "expo-router": "^57.0.25",
+    "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -29,6 +30,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/node": "^26.6.5",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
@@ -45,7 +47,6 @@
   "overrides": {
     "braces": "^3.0.3",
     "decode-uri-component": "^0.5.0",
-    "node-forge": "^1.4.0",
-    "uuid": "^14.0.2"
+    "node-forge": "^1.4.0"
   }
 }
