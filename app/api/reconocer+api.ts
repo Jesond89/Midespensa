@@ -8,7 +8,9 @@ import { autenticar } from '../../src/server/auth';
 // (GEMINI_API_KEY) se lee de process.env, no lleva prefijo EXPO_PUBLIC_,
 // nunca se envía al teléfono ni se escribe en logs ni en respuestas.
 
-const MODELO = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+// gemini-2.5-flash-lite fue retirado para cuentas nuevas (404). Si Google
+// vuelve a cambiar el catalogo, basta con poner GEMINI_MODEL en el entorno.
+const MODELO = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const URL_API = `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`;
 const TIPOS = ['image/jpeg'] as const; // la app siempre manda JPEG reducido
 type TipoImagen = (typeof TIPOS)[number];

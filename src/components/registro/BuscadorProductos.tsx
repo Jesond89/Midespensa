@@ -245,7 +245,12 @@ export function BuscadorProductos({ productosCasa, onAgregar }: {
           accessibilityLabel="Buscar producto"
         />
         {!!busqueda && (
-          <Pressable onPress={() => { setBusqueda(''); setSeleccion(null); }} hitSlop={8} accessibilityLabel="Borrar búsqueda">
+          <Pressable
+            onPress={() => { setBusqueda(''); setSeleccion(null); }}
+            hitSlop={14}
+            accessibilityRole="button"
+            accessibilityLabel="Borrar búsqueda"
+          >
             <Icono nombre="cerrar" tamano={14} color={ui.icono} />
           </Pressable>
         )}
@@ -592,18 +597,26 @@ function Contador({ pregunta, valor, paso, minimo, rapidos, sufijo, nota, onCamb
     <View style={styles.contador}>
       <Text style={styles.pregunta}>{pregunta}</Text>
       <View style={styles.contadorFila}>
-        <Rebote onPress={() => onCambiar(Math.max(minimo, +(valor - paso).toFixed(2)))} escala={0.85} style={styles.paso} accessibilityLabel="Menos">
+        <Rebote onPress={() => onCambiar(Math.max(minimo, +(valor - paso).toFixed(2)))} escala={0.85} hitSlop={8} style={styles.paso} accessibilityRole="button" accessibilityLabel="Menos">
           <Icono nombre="menos" tamano={18} color={ui.texto} />
         </Rebote>
         <Text style={styles.valor}>{num(valor)}{sufijo ? <Text style={styles.sufijo}> {sufijo}</Text> : null}</Text>
-        <Rebote onPress={() => onCambiar(+(valor + paso).toFixed(2))} escala={0.85} style={styles.paso} accessibilityLabel="Más">
+        <Rebote onPress={() => onCambiar(+(valor + paso).toFixed(2))} escala={0.85} hitSlop={8} style={styles.paso} accessibilityRole="button" accessibilityLabel="Más">
           <Icono nombre="mas" tamano={18} color={ui.texto} />
         </Rebote>
         {nota ? <Text style={styles.nota}>{nota}</Text> : null}
       </View>
       <View style={styles.rapidos}>
         {rapidos.map((r) => (
-          <Pressable key={r} onPress={() => onCambiar(r)} style={[styles.rapido, valor === r && styles.rapidoActivo]}>
+          <Pressable
+            key={r}
+            onPress={() => onCambiar(r)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: valor === r }}
+            accessibilityLabel={`${num(r)}${sufijo ? ` ${sufijo}` : ''}`}
+            style={[styles.rapido, valor === r && styles.rapidoActivo]}
+          >
             <Text style={[styles.rapidoTexto, valor === r && { color: ui.accionTexto }]}>{num(r)}{sufijo ? ` ${sufijo}` : ''}</Text>
           </Pressable>
         ))}
@@ -689,7 +702,7 @@ const styles = StyleSheet.create({
   sufijo: { fontSize: 15, fontWeight: '600', color: ui.textoSecundario },
   nota: { fontSize: 14, color: ui.textoSecundario, marginLeft: 'auto' },
   rapidos: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md },
-  rapido: { paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: ui.relleno, justifyContent: 'center' },
+  rapido: { paddingHorizontal: 14, height: 36, borderRadius: 18, backgroundColor: ui.relleno, justifyContent: 'center' },
   rapidoActivo: { backgroundColor: ui.accion },
   rapidoTexto: { fontSize: 14, fontWeight: '600', color: ui.texto },
 

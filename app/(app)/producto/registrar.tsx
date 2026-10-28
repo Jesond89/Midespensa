@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { Boton, Chip, Grupo, Nota } from '../../../src/components/ui/Formulario';
+import { Boton, Chip, Grupo } from '../../../src/components/ui/Formulario';
 import { IconoCuadro } from '../../../src/components/ui/Lista';
 import { Icono } from '../../../src/components/ui/Icono';
 import { Rebote, vibrar } from '../../../src/components/hogar/animaciones';
@@ -18,6 +18,10 @@ import { useCatalogo } from '../../../src/state/CatalogoProvider';
 import { DEFECTOS_POR_CATEGORIA } from '../../../src/data/productos';
 import { ErrorEscaneo, prepararFoto, reconocerProductos } from '../../../src/services/reconocer';
 import { BuscadorProductos, ProductoAAgregar } from '../../../src/components/registro/BuscadorProductos';
+import {
+  AccionAviso, AvisoEscaneo, Confianza, EscaneoProgreso, MarcaConfianza, NotaRevision, PistasFoto,
+  bandaConfianza, textoConfianza,
+} from '../../../src/components/registro/escaneo';
 import { hoyISO, sumarDias } from '../../../src/utils/fechas';
 import { ui, spacing } from '../../../src/theme/tokens';
 
@@ -44,6 +48,8 @@ type Borrador = {
   dias: number | null;
   /** El escaneo no estaba seguro: se marca para revisar. */
   revisar: boolean;
+  /** Qué tan segura venía la detección; sirve para marcar lo dudoso en la lista. */
+  confianza?: Confianza;
   /** De qué sección vino. */
   origen: Seccion;
 };
@@ -54,8 +60,6 @@ const SECCIONES: { id: Seccion; titulo: string; icono: 'camara' | 'buscar' }[] =
   { id: 'lista', titulo: 'Lista', icono: 'buscar' },
   { id: 'camara', titulo: 'Cámara', icono: 'camara' },
 ];
-
-const CONSEJOS = ['Productos de frente', 'Buena luz', 'Sin amontonar'];
 
 const CADUCIDADES: { etiqueta: string; dias: number | null }[] = [
   { etiqueta: 'No caduca', dias: null },
@@ -92,6 +96,8 @@ export default function RegistrarCompras() {
   const camara = useRef<CameraView>(null);
 
   const [foto, setFoto] = useState<string | null>(null);
+  // La última foto enviada, para reintentar el escaneo sin volver a tomarla.
+  const [ultima, setUltima] = useState<{ uri: string; ancho: number; alto: number } | null>(null);
   const [analizando, setAnalizando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -114,6 +120,7 @@ export default function RegistrarCompras() {
 
   const procesar = async (uri: string, ancho: number, alto: number) => {
     setFoto(uri);
+    setUltima({ uri, ancho, alto });
     setError(null);
     setAviso(null);
     setAnalizando(true);
@@ -130,6 +137,7 @@ export default function RegistrarCompras() {
         ubicacion: p.ubicacion,
         dias: p.dias_caducidad,
         revisar: p.confianza === 'baja',
+        confianza: p.confianza,
         origen: 'camara' as const,
       }));
       // Las fotos se suman: compras primero y luego la alacena, por ejemplo.
@@ -141,6 +149,18 @@ export default function RegistrarCompras() {
     } finally {
       setAnalizando(false);
     }
+  };
+
+  /** Descartar la foto: también se van el error y el aviso de esa foto. */
+  const otraFoto = () => {
+    setFoto(null);
+    setError(null);
+    setAviso(null);
+  };
+
+  /** Mismo escaneo, misma foto: lo normal cuando el servicio estaba ocupado. */
+  const reintentar = () => {
+    if (ultima && !analizando) void procesar(ultima.uri, ultima.ancho, ultima.alto);
   };
 
   const tomarFoto = async () => {
@@ -211,13 +231,13 @@ export default function RegistrarCompras() {
   const camaraNegada = !!permiso && !permiso.granted && !permiso.canAskAgain;
 
   const principal = analizando
-    ? <Boton titulo="Analizando…" cargando onPress={() => {}} />
+    ? <Boton titulo="Buscando productos…" cargando onPress={() => {}} />
     : borradores.length
       ? <Boton titulo={listos ? `Guardar ${incluidos.length} ${incluidos.length === 1 ? 'producto' : 'productos'}` : 'Completa los nombres'} icono="check" deshabilitado={!listos} onPress={guardar} />
       : seccion === 'lista'
         ? <Boton titulo="Guardar" icono="check" deshabilitado onPress={() => {}} />
         : foto
-          ? <Boton titulo="Tomar otra foto" icono="camara" onPress={() => setFoto(null)} />
+          ? <Boton titulo="Tomar otra foto" icono="camara" onPress={otraFoto} />
           : permiso?.granted
             ? <Boton titulo="Tomar foto" icono="camara" onPress={tomarFoto} />
             : !camaraNegada
@@ -226,6 +246,18 @@ export default function RegistrarCompras() {
   // Cada acción aparece una sola vez: si el botón grande ya es la galería, no se repite abajo del recuadro.
   const galeriaEnBoton = seccion === 'camara' && !analizando && !borradores.length && !foto && camaraNegada;
   const cuantos = (s: Seccion) => borradores.filter((b) => b.origen === s).length;
+  const porRevisar = borradores.filter((b) => b.revisar).length;
+
+  // Cuando el escaneo falla, las dos salidas: el mismo intento otra vez o
+  // registrarlos a mano, que es lo que varios mensajes de error sugieren.
+  const aMano: AccionAviso = {
+    etiqueta: 'Agregar a mano',
+    icono: 'buscar',
+    onPress: () => { vibra('seleccion'); setSeccion('lista'); },
+  };
+  const accionesError: AccionAviso[] = ultima
+    ? [{ etiqueta: 'Reintentar', principal: true, onPress: reintentar }, aMano]
+    : [aMano];
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -247,7 +279,7 @@ export default function RegistrarCompras() {
                 {foto ? (
                   <>
                     <Image source={{ uri: foto }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                    {analizando && <Escaneando alto={altoCaja} />}
+                    {analizando && <EscaneoProgreso alto={altoCaja} />}
                   </>
                 ) : permiso?.granted ? (
                   <>
@@ -270,22 +302,27 @@ export default function RegistrarCompras() {
                 <Animated.View style={[StyleSheet.absoluteFill, styles.destello, { opacity: destello }]} />
               </View>
 
-              <View style={styles.consejos}>
-                {CONSEJOS.map((c) => (
-                  <View key={c} style={styles.consejo}>
-                    <Icono nombre="check" tamano={11} color={ui.textoSecundario} />
-                    <Text style={styles.consejoTexto}>{c}</Text>
-                  </View>
-                ))}
-              </View>
+              {/* Consejos para encuadrar: solo sirven antes de disparar. */}
+              {!foto && <PistasFoto />}
 
-              <View style={styles.accionesFoto}>
-                {!galeriaEnBoton && <Chip etiqueta="Elegir de la galería" icono="galeria" onPress={elegirDeGaleria} />}
-                {foto && !analizando && <Chip etiqueta="Otra foto" icono="camara" onPress={() => setFoto(null)} />}
-              </View>
+              {/* Mientras analiza no hay nada que tocar aquí: la fila no se dibuja. */}
+              {!analizando && (!galeriaEnBoton || !!foto) && (
+                <View style={styles.accionesFoto}>
+                  {!galeriaEnBoton && <Chip etiqueta="Elegir de la galería" icono="galeria" onPress={elegirDeGaleria} />}
+                  {foto && <Chip etiqueta="Otra foto" icono="camara" onPress={otraFoto} />}
+                </View>
+              )}
 
-              {error && <Nota error>{error}</Nota>}
-              {aviso && !error && <Nota>{aviso}</Nota>}
+              {error ? (
+                <AvisoEscaneo tono="error" titulo="No se pudo escanear la foto" mensaje={error} acciones={accionesError} />
+              ) : aviso ? (
+                <AvisoEscaneo
+                  tono="aviso"
+                  titulo="Revisa la foto"
+                  mensaje={aviso}
+                  acciones={[{ etiqueta: 'Tomar otra foto', icono: 'camara', onPress: otraFoto }]}
+                />
+              ) : null}
             </View>
           ) : (
             <BuscadorProductos productosCasa={productos} onAgregar={agregarDesdeBuscador} />
@@ -295,17 +332,30 @@ export default function RegistrarCompras() {
         {/* Lista para revisar antes de guardar */}
         <View style={styles.seccion}>
           <View style={styles.seccionCabecera}>
-            <Text style={styles.seccionTitulo}>
-              {borradores.length ? `Por registrar · ${incluidos.length} de ${borradores.length}` : 'Por registrar'}
-            </Text>
+            <Text style={styles.seccionTitulo}>Por registrar</Text>
+            {borradores.length > 0 && (
+              <Text style={styles.seccionCuenta}>{incluidos.length} de {borradores.length}</Text>
+            )}
           </View>
 
-          {borradores.length === 0 ? (
-            <Text style={styles.ayuda}>
-              {seccion === 'camara'
-                ? 'Toma una foto de tus compras sobre la mesa o de la alacena abierta. Lo que se detecte aparece aquí para revisarlo.'
-                : 'Elige productos de la lista. Aquí se juntan con lo que escanees con la cámara para revisarlos antes de guardar.'}
+          {/* Lo que la cámara no leyó bien se avisa aquí arriba: es lo que hay que corregir. */}
+          {porRevisar > 0 && (
+            <Text style={styles.porRevisar}>
+              {porRevisar === 1
+                ? 'Hay 1 producto que la cámara no leyó bien. Tócalo para corregirlo.'
+                : `Hay ${porRevisar} productos que la cámara no leyó bien. Tócalos para corregirlos.`}
             </Text>
+          )}
+
+          {borradores.length === 0 ? (
+            <View style={styles.vacio}>
+              <Icono nombre="bolsa-lista" tamano={30} color={ui.textoTerciario} />
+              <Text style={styles.vacioTexto}>
+                {seccion === 'camara'
+                  ? 'Toma una foto de tus compras sobre la mesa o de la alacena abierta. Lo que se detecte aparece aquí para revisarlo.'
+                  : 'Elige productos de la lista. Aquí se juntan con lo que escanees con la cámara para revisarlos antes de guardar.'}
+              </Text>
+            </View>
           ) : (
             <Grupo sangria={64}>
               {borradores.map((b) => (
@@ -381,52 +431,48 @@ function Aparece({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ——— Animación mientras se analiza la foto ———
-
-function Escaneando({ alto }: { alto: number }) {
-  const [v] = useState(() => new Animated.Value(0));
-  useEffect(() => {
-    const anim = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' }));
-    anim.start();
-    return () => anim.stop();
-  }, [v]);
-  return (
-    <View style={[StyleSheet.absoluteFill, styles.escaneando]}>
-      <Animated.View
-        style={[styles.barrido, { transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [-20, alto] }) }] }]}
-      />
-      <Text style={styles.escaneandoTexto}>Buscando productos…</Text>
-    </View>
-  );
-}
-
 // ——— Fila de la lista: resumen y editor desplegable ———
 
 function FilaBorrador({ borrador: b, abierto, onAbrir, onCambiar, onQuitar }: {
   borrador: Borrador; abierto: boolean; onAbrir: () => void; onCambiar: (c: Partial<Borrador>) => void; onQuitar: () => void;
 }) {
   const paso = b.unidad === 'kg' || b.unidad === 'L' ? 0.5 : 1;
+  // Franja y marca solo si la cámara dudó: la fila limpia no lleva adornos.
+  const banda = bandaConfianza(b.revisar, b.confianza);
+  const cantidad = `${formatoCantidad(b.cantidad)} ${b.unidad}`;
+  const duda = textoConfianza(b.revisar, b.confianza);
+  const etiqueta = [b.nombre || 'Sin nombre', cantidad, b.ubicacion, textoDias(b.dias), duda].filter(Boolean).join(', ');
   return (
     <View style={styles.fila}>
+      {banda && <View style={[styles.banda, { backgroundColor: banda }]} />}
       <View style={styles.filaResumen}>
         <Pressable
           onPress={() => onCambiar({ incluir: !b.incluir })}
-          hitSlop={8}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: b.incluir }}
           accessibilityLabel={`Incluir ${b.nombre || 'producto'}`}
         >
           <Icono nombre={b.incluir ? 'check-circulo' : 'circulo'} tamano={24} color={b.incluir ? ui.accion : ui.icono} />
         </Pressable>
-        <Pressable onPress={onAbrir} style={styles.filaTocable} accessibilityRole="button" accessibilityLabel={`Editar ${b.nombre || 'producto'}`}>
+        <Pressable
+          onPress={onAbrir}
+          style={styles.filaTocable}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: abierto }}
+          accessibilityLabel={`${etiqueta}. Toca para editarlo.`}
+        >
           <IconoCuadro icono={iconoCategoria(b.categoria)} />
           <View style={{ flex: 1, opacity: b.incluir ? 1 : 0.45 }}>
-            <Text style={[styles.filaNombre, !b.nombre && { color: ui.textoTerciario }]} numberOfLines={1}>{b.nombre || 'Sin nombre'}</Text>
+            <View style={styles.filaEncabezado}>
+              <Text style={[styles.filaNombre, !b.nombre && { color: ui.textoTerciario }]} numberOfLines={1}>{b.nombre || 'Sin nombre'}</Text>
+              <MarcaConfianza revisar={b.revisar} confianza={b.confianza} />
+            </View>
             <Text style={styles.filaDetalle} numberOfLines={1}>
-              {formatoCantidad(b.cantidad)} {b.unidad} · {b.ubicacion} · {textoDias(b.dias)}
+              <Text style={styles.filaCantidad}>{cantidad}</Text>
+              {` · ${b.ubicacion} · ${textoDias(b.dias).toLowerCase()}`}
             </Text>
           </View>
-          {b.revisar && <View style={styles.revisar}><Text style={styles.revisarTexto}>Revisar</Text></View>}
           <View style={{ transform: [{ rotate: abierto ? '90deg' : '0deg' }] }}>
             <Icono nombre="chevron" tamano={14} color={ui.textoTerciario} />
           </View>
@@ -435,20 +481,22 @@ function FilaBorrador({ borrador: b, abierto, onAbrir, onCambiar, onQuitar }: {
 
       {abierto && (
         <View style={styles.editor}>
+          {/* Lo que hay que corregir, dicho donde se corrige. */}
+          <NotaRevision revisar={b.revisar} confianza={b.confianza} />
           <TextInput
             value={b.nombre}
-            onChangeText={(nombre) => onCambiar({ nombre, revisar: false })}
+            onChangeText={(nombre) => onCambiar({ nombre, revisar: false, confianza: 'alta' })}
             placeholder="Nombre del producto"
             placeholderTextColor={ui.textoTerciario}
             style={[styles.editorNombre, sinContornoWeb]}
           />
 
           <View style={styles.cantidad}>
-            <Rebote onPress={() => onCambiar({ cantidad: Math.max(paso, +(b.cantidad - paso).toFixed(2)) })} escala={0.85} style={styles.paso} accessibilityLabel="Menos">
+            <Rebote onPress={() => onCambiar({ cantidad: Math.max(paso, +(b.cantidad - paso).toFixed(2)) })} escala={0.85} hitSlop={8} style={styles.paso} accessibilityRole="button" accessibilityLabel="Menos">
               <Icono nombre="menos" tamano={18} color={ui.texto} />
             </Rebote>
             <Text style={styles.cantidadTexto}>{formatoCantidad(b.cantidad)}</Text>
-            <Rebote onPress={() => onCambiar({ cantidad: +(b.cantidad + paso).toFixed(2) })} escala={0.85} style={styles.paso} accessibilityLabel="Más">
+            <Rebote onPress={() => onCambiar({ cantidad: +(b.cantidad + paso).toFixed(2) })} escala={0.85} hitSlop={8} style={styles.paso} accessibilityRole="button" accessibilityLabel="Más">
               <Icono nombre="mas" tamano={18} color={ui.texto} />
             </Rebote>
           </View>
@@ -467,7 +515,7 @@ function FilaBorrador({ borrador: b, abierto, onAbrir, onCambiar, onQuitar }: {
             {CATEGORIAS.map((c) => <Chip key={c.nombre} etiqueta={c.nombre} icono={c.icono} activo={b.categoria === c.nombre} onPress={() => onCambiar({ categoria: c.nombre })} />)}
           </Opciones>
 
-          <Pressable onPress={onQuitar} style={styles.quitar} accessibilityRole="button">
+          <Pressable onPress={onQuitar} hitSlop={8} style={styles.quitar} accessibilityRole="button" accessibilityLabel={`Quitar ${b.nombre || 'este producto'} de la lista`}>
             <Icono nombre="basura" tamano={16} color={ui.error} />
             <Text style={styles.quitarTexto}>Quitar de la lista</Text>
           </Pressable>
@@ -521,9 +569,6 @@ const styles = StyleSheet.create({
     position: 'absolute', left: '8%', right: '8%', top: '8%', bottom: '22%', borderRadius: 18,
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.55)', borderStyle: 'dashed', pointerEvents: 'none',
   },
-  consejos: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: spacing.md },
-  consejo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  consejoTexto: { fontSize: 12, color: ui.textoSecundario },
   disparador: {
     position: 'absolute', bottom: 14, alignSelf: 'center', width: 58, height: 58, borderRadius: 29,
     borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
@@ -532,26 +577,24 @@ const styles = StyleSheet.create({
   destello: { backgroundColor: '#FFFFFF', pointerEvents: 'none' },
   sinCamara: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
   sinCamaraTexto: { color: 'rgba(255,255,255,0.85)', fontSize: 14, textAlign: 'center', lineHeight: 19 },
-  escaneando: { backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: spacing.lg },
-  barrido: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 20,
-    backgroundColor: 'rgba(255,255,255,0.35)', shadowColor: '#FFFFFF', shadowOpacity: 0.9, shadowRadius: 12,
-  },
-  escaneandoTexto: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
   accionesFoto: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm },
 
   seccion: { gap: spacing.sm },
   seccionCabecera: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg },
   seccionTitulo: { fontSize: 13, fontWeight: '600', color: ui.textoSecundario, letterSpacing: 0.2 },
-  ayuda: { fontSize: 14, color: ui.textoSecundario, lineHeight: 20, paddingHorizontal: spacing.lg, textAlign: 'center', marginTop: spacing.sm },
+  seccionCuenta: { fontSize: 13, fontWeight: '500', color: ui.textoTerciario },
+  porRevisar: { fontSize: 13, fontWeight: '500', color: ui.texto, lineHeight: 18, paddingHorizontal: spacing.lg },
+  vacio: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  vacioTexto: { fontSize: 14, color: ui.textoSecundario, lineHeight: 20, textAlign: 'center' },
 
   fila: { backgroundColor: ui.tarjeta },
+  banda: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   filaResumen: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingLeft: spacing.lg },
   filaTocable: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 11, paddingRight: spacing.lg, minHeight: 58 },
-  filaNombre: { fontSize: 16, fontWeight: '600', color: ui.texto, letterSpacing: -0.2 },
+  filaEncabezado: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  filaNombre: { flexShrink: 1, fontSize: 16, fontWeight: '600', color: ui.texto, letterSpacing: -0.2 },
   filaDetalle: { fontSize: 13, color: ui.textoSecundario, marginTop: 2 },
-  revisar: { backgroundColor: '#FFF1DC', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  revisarTexto: { fontSize: 11, fontWeight: '700', color: ui.porVencer },
+  filaCantidad: { fontSize: 13, fontWeight: '600', color: ui.texto },
 
   editor: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.md },
   editorNombre: { fontSize: 16, color: ui.texto, backgroundColor: ui.fondo, borderRadius: 10, paddingHorizontal: spacing.md, paddingVertical: 10 },
