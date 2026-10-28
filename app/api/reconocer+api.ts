@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EsquemaEscaneo } from '../../src/services/esquemaEscaneo';
 import { autenticar } from '../../src/server/auth';
+import { CATEGORIAS, UBICACIONES, UNIDADES } from '../../src/data/catalogo';
 
 // POST /api/reconocer — recibe una foto de las compras o de la alacena y
 // devuelve la lista de productos que se ven, para que el usuario la revise
@@ -42,12 +43,70 @@ const INSTRUCCIONES = `Inventario de despensa (México). Foto de compras, alacen
 - Agrupa idénticos: "cantidad" = cuántos, "unidad" = cómo se cuenta (pieza, paquete, lata, frasco, manojo, docena); kg/g/L/ml solo si es un envase y se lee el contenido.
 - Nombre común en español de México; añade marca y presentación si se leen.
 - "ubicacion": dónde se guarda normalmente.
+Usa EXACTAMENTE estos valores, tal cual, con sus acentos y mayúsculas:
+unidad: ${UNIDADES.join(' | ')}
+categoria: ${CATEGORIAS.map((c) => c.nombre).join(' | ')}
+ubicacion: ${UBICACIONES.map((u) => u.nombre).join(' | ')}
+confianza: alta | media | baja
 - "dias_caducidad": estimado sin abrir desde hoy, null si no caduca; si se lee fecha en el empaque, úsala.
 - "confianza" baja si está tapado o dudoso; no inventes productos.
 Si la foto no sirve, lista vacía y en "aviso" cómo tomarla mejor.`;
 
 // Esquema JSON que Gemini debe respetar (se genera desde el mismo zod que valida la respuesta).
-const { $schema: _omitido, ...ESQUEMA_JSON } = z.toJSONSchema(EsquemaEscaneo) as Record<string, unknown>;
+const { $schema: _omitido, ...ESQUEMA_BRUTO } = z.toJSONSchema(EsquemaEscaneo) as Record<string, unknown>;
+
+// Gemini rechaza el esquema con "constraint that has too many states for
+// serving" y senala los limites de longitud de arreglos anidados. Se quita
+// maxItems del esquema que viaja; zod lo sigue aplicando al validar.
+const ESQUEMA_JSON = JSON.parse(
+  JSON.stringify(ESQUEMA_BRUTO, (llave, valor) => (llave === 'maxItems' || llave === 'minItems' ? undefined : valor))
+) as Record<string, unknown>;
+
+// Red de seguridad: si el esquema no llega a aplicarse, el modelo escribe
+// variantes ("piezas", "abarrotes", "Lacteos"). Se acercan al valor valido
+// mas parecido comparando sin acentos ni mayusculas, y en singular.
+const sinAcentos = (v: string) =>
+  v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const singular = (v: string) => v.replace(/e?s$/, '');
+
+function acercar<T extends string>(valor: unknown, validos: readonly T[], porDefecto: T): T {
+  if (typeof valor !== 'string') return porDefecto;
+  const exacto = validos.find((v) => v === valor);
+  if (exacto) return exacto;
+  const objetivo = sinAcentos(valor);
+  const laxo = validos.find((v) => sinAcentos(v) === objetivo);
+  if (laxo) return laxo;
+  const raiz = singular(objetivo);
+  const porRaiz = validos.find((v) => singular(sinAcentos(v)) === raiz);
+  return porRaiz ?? porDefecto;
+}
+
+const NOMBRES_CATEGORIA = CATEGORIAS.map((c) => c.nombre);
+const NOMBRES_UBICACION = UBICACIONES.map((u) => u.nombre);
+
+/** Normaliza los campos de catalogo antes de validar con zod. */
+function normalizar(json: unknown) {
+  if (!json || typeof json !== 'object') return json;
+  const datos = json as { productos?: unknown };
+  if (!Array.isArray(datos.productos)) return json;
+  let ajustados = 0;
+  datos.productos = datos.productos.map((p) => {
+    if (!p || typeof p !== 'object') return p;
+    const prod = p as Record<string, unknown>;
+    const antes = `${prod.unidad}|${prod.categoria}|${prod.ubicacion}|${prod.confianza}`;
+    const limpio = {
+      ...prod,
+      unidad: acercar(prod.unidad, UNIDADES, 'pieza'),
+      categoria: acercar(prod.categoria, NOMBRES_CATEGORIA, 'Otros'),
+      ubicacion: acercar(prod.ubicacion, NOMBRES_UBICACION, 'Alacena'),
+      confianza: acercar(prod.confianza, ['alta', 'media', 'baja'] as const, 'media'),
+    };
+    if (`${limpio.unidad}|${limpio.categoria}|${limpio.ubicacion}|${limpio.confianza}` !== antes) ajustados += 1;
+    return limpio;
+  });
+  if (ajustados) console.warn(`[reconocer] ${ajustados} producto(s) con valores fuera de catalogo, ajustados`);
+  return datos;
+}
 
 function error(codigo: string, status: number) {
   return Response.json({ error: codigo }, { status });
@@ -165,9 +224,9 @@ export async function POST(request: Request) {
     return error('sin-resultado', 502);
   }
 
-  const validado = EsquemaEscaneo.safeParse(json);
+  const validado = EsquemaEscaneo.safeParse(normalizar(json));
   if (!validado.success) {
-    console.error('[reconocer] no cumple el esquema:', JSON.stringify(validado.error.issues).slice(0, 500));
+    console.error('[reconocer] no cumple el esquema:', JSON.stringify(validado.error.issues).slice(0, 400), '| crudo:', limpio.slice(0, 300));
     return error('sin-resultado', 502);
   }
   return Response.json(validado.data);
