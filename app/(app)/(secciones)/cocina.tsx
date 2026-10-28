@@ -3,23 +3,38 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Icono } from '../../../src/components/ui/Icono';
 import { Grupo, Boton, Nota, Seccion } from '../../../src/components/ui/Formulario';
 import { useHogar } from '../../../src/state/HogarProvider';
-import { recetasMock } from '../../../src/data/mock';
+import { ErrorRecetas, sugerirRecetas } from '../../../src/services/recetas';
+import type { Receta } from '../../../src/services/esquemaRecetas';
 import { estaPorCaducar } from '../../../src/utils/caducidad';
 import { ui, spacing } from '../../../src/theme/tokens';
 import { useEspacioInferior } from '../../../src/theme/navegacion';
 
-// RF-08 / HU-04. La generación real vendrá del backend + Gemini; aquí se
-// deja la interacción completa con datos de prueba, marcada como tal.
+// RF-08 / HU-04. Las recetas las genera Gemini en la ruta de servidor
+// /api/recetas, que lee el inventario del hogar desde el JWT: esta pantalla
+// solo pide y muestra, no manda productos ni conoce la clave.
 export default function Cocina() {
   const espacioInferior = useEspacioInferior();
   const { productos } = useHogar();
   const [cargando, setCargando] = useState(false);
-  const [mostrarRecetas, setMostrarRecetas] = useState(false);
+  const [recetas, setRecetas] = useState<Receta[] | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const prioridad = productos.filter(estaPorCaducar);
 
-  const pedirRecetas = () => {
+  const pedirRecetas = async () => {
     setCargando(true);
-    setTimeout(() => { setCargando(false); setMostrarRecetas(true); }, 700);
+    setError(null);
+    setAviso(null);
+    try {
+      const resultado = await sugerirRecetas();
+      setRecetas(resultado.recetas);
+      setAviso(resultado.aviso);
+    } catch (e) {
+      setRecetas(null);
+      setError(e instanceof ErrorRecetas ? e.message : 'No se pudieron sugerir recetas. Intenta de nuevo en un momento.');
+    } finally {
+      setCargando(false);
+    }
   };
 
   return (
@@ -38,12 +53,22 @@ export default function Cocina() {
         </Seccion>
       )}
 
-      <Boton titulo="Sugerir recetas" icono="chispas" cargando={cargando} onPress={pedirRecetas} />
+      <Boton
+        titulo={recetas?.length ? 'Sugerir otras recetas' : 'Sugerir recetas'}
+        icono="chispas"
+        cargando={cargando}
+        onPress={() => void pedirRecetas()}
+      />
 
-      {mostrarRecetas && (
+      {error && <Nota error>{error}</Nota>}
+
+      {!error && recetas && (
         <View style={{ gap: spacing.lg }}>
-          <Nota>Vista previa con datos de prueba; la IA se conecta en el siguiente sprint.</Nota>
-          {recetasMock.map((r) => (
+          {aviso && <Nota>{aviso}</Nota>}
+          {recetas.length === 0 && !aviso && (
+            <Nota>No salieron recetas con lo que hay registrado. Agrega algunos productos más y vuelve a intentar.</Nota>
+          )}
+          {recetas.map((r) => (
             <Grupo key={r.id}>
               <View style={styles.receta}>
                 <Text style={styles.recetaTitulo}>{r.titulo}</Text>

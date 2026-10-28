@@ -1,22 +1,36 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Icono } from '../../../src/components/ui/Icono';
-import { Grupo, Campo, Boton, Nota, Seccion } from '../../../src/components/ui/Formulario';
-import { Vacio } from '../../../src/components/ui/Lista';
+import { Grupo, Campo, Boton, Nota } from '../../../src/components/ui/Formulario';
+import { CabeceraGrupo, FilaFaltante, VacioAccion } from '../../../src/components/inventario/piezas';
+import { vibrar } from '../../../src/components/hogar/animaciones';
 import { useHogar } from '../../../src/state/HogarProvider';
+import { usePreferencias } from '../../../src/state/PreferenciasProvider';
 import { ui, spacing } from '../../../src/theme/tokens';
 import { useEspacioInferior } from '../../../src/theme/navegacion';
-import { cantidadTexto } from '../../../src/utils/cantidad';
 
 // Lista de compras: lo que se marcó como agotado más lo que se agregue a
 // mano. Al terminar la compra, lo marcado pasa a la despensa con fecha de hoy.
+//
+// Esta pantalla se usa de pie en el súper y con una mano, así que:
+//   · toda la fila marca y desmarca, y quitar tiene su propio botón aparte;
+//   · lo que ya está en el carrito baja a su grupo y se tacha, de modo que
+//     la lista de arriba se va acortando conforme se avanza;
+//   · el botón de guardar queda fijo abajo, al alcance del pulgar, sin
+//     tener que recorrer toda la lista para encontrarlo.
 export default function Faltantes() {
   const espacioInferior = useEspacioInferior();
+  const router = useRouter();
   const { faltantes, agregarFaltante, quitarFaltante, terminarCompra } = useHogar();
+  const { prefs } = usePreferencias();
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
   const [nuevo, setNuevo] = useState('');
 
+  const vibra = (tipo: keyof typeof vibrar) => { if (prefs.vibracion) vibrar[tipo](); };
+
   const alternar = (id: string) => {
+    vibra('seleccion');
     setSeleccionados((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   };
 
@@ -24,97 +38,141 @@ export default function Faltantes() {
     if (!nuevo.trim()) return;
     agregarFaltante(nuevo, 1, 'pieza');
     setNuevo('');
+    vibra('seleccion');
   };
 
   const terminar = () => {
+    vibra('exito');
     terminarCompra(seleccionados);
     setSeleccionados([]);
   };
 
+  // Lo marcado baja; lo que falta por echar al carrito se queda arriba.
+  const marcados = faltantes.filter((f) => seleccionados.includes(f.id));
+  const pendientes = faltantes.filter((f) => !seleccionados.includes(f.id));
+  // Freddy flota en la esquina inferior derecha: se le deja su hueco para
+  // que no se siente encima del botón.
+  const hueco = prefs.freddyEnSecciones ? 96 : 0;
+  const altoPie = 54 + spacing.md + espacioInferior;
+
   return (
-    <ScrollView contentContainerStyle={[styles.contenido, { paddingBottom: espacioInferior + spacing.lg }]} keyboardShouldPersistTaps="handled">
-      <Grupo>
-        <View style={styles.agregar}>
-          <View style={{ flex: 1 }}>
-            <Campo
-              icono="mas-circulo"
-              placeholder="Agregar a la lista"
-              value={nuevo}
-              onChangeText={setNuevo}
-              onSubmitEditing={agregar}
-              returnKeyType="done"
-              submitBehavior="submit"
-            />
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.contenido,
+          { paddingBottom: (marcados.length ? altoPie : espacioInferior) + spacing.xl },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <Grupo>
+          <View style={styles.agregar}>
+            <View style={{ flex: 1 }}>
+              <Campo
+                icono="mas-circulo"
+                placeholder="Agregar a la lista"
+                value={nuevo}
+                onChangeText={setNuevo}
+                onSubmitEditing={agregar}
+                returnKeyType="done"
+                submitBehavior="submit"
+              />
+            </View>
+            {nuevo.trim().length > 0 && (
+              <Pressable
+                onPress={agregar}
+                hitSlop={8}
+                style={({ pressed }) => [styles.agregarBoton, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Agregar ${nuevo.trim()} a la lista`}
+              >
+                <Icono nombre="flecha-arriba" tamano={18} color={ui.accionTexto} />
+              </Pressable>
+            )}
           </View>
-          {nuevo.trim().length > 0 && (
-            <Pressable onPress={agregar} style={styles.agregarBoton} accessibilityRole="button" accessibilityLabel="Agregar">
-              <Icono nombre="flecha-arriba" tamano={18} color={ui.accionTexto} />
-            </Pressable>
-          )}
-        </View>
-      </Grupo>
+        </Grupo>
 
-      {faltantes.length === 0 ? (
-        <Vacio
-          icono="carrito"
-          titulo="No falta nada"
-          texto="Cuando un producto se acabe, márcalo como agotado y aparecerá aquí."
-        />
-      ) : (
-        <Seccion titulo={`Por comprar · ${faltantes.length}`} nota="Toca para marcar lo que ya está en el carrito.">
-          <Grupo sangria={52}>
-            {faltantes.map((f) => {
-              const marcado = seleccionados.includes(f.id);
-              return (
-                <Pressable
-                  key={f.id}
-                  onPress={() => alternar(f.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityLabel={`${f.nombre}, ${cantidadTexto(f.cantidad, f.unidad)}`}
-                  accessibilityState={{ checked: marcado }}
-                  style={({ pressed }) => [styles.fila, pressed && { backgroundColor: ui.tarjetaPresionada }]}
-                >
-                  <Icono
-                    nombre={marcado ? 'check-circulo' : 'circulo'}
-                    tamano={24}
-                    color={marcado ? ui.accion : ui.icono}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.nombre, marcado && styles.nombreMarcado]}>{f.nombre}</Text>
-                    <Text style={styles.detalle}>{cantidadTexto(f.cantidad, f.unidad)}</Text>
-                  </View>
-                  <Pressable onPress={() => quitarFaltante(f.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Quitar ${f.nombre}`}>
-                    <Icono nombre="cerrar" tamano={18} color={ui.textoTerciario} />
-                  </Pressable>
-                </Pressable>
-              );
-            })}
-          </Grupo>
-        </Seccion>
-      )}
+        {faltantes.length === 0 ? (
+          <VacioAccion
+            icono="carrito"
+            titulo="No falta nada"
+            texto="Cuando algo se acabe, ábrelo en tu despensa y toca “Se acabó”: aparecerá aquí para la próxima compra."
+            accion={{ etiqueta: 'Ver mi despensa', icono: 'frasco', onPress: () => router.push('/inventario') }}
+          />
+        ) : (
+          <>
+            {pendientes.length > 0 ? (
+              <View style={styles.grupo}>
+                <CabeceraGrupo
+                  titulo="Por comprar"
+                  cuenta={pendientes.length}
+                  nota="Tócalos cuando los eches al carrito."
+                />
+                <Grupo sangria={60}>
+                  {pendientes.map((f) => (
+                    <FilaFaltante
+                      key={f.id}
+                      item={f}
+                      marcado={false}
+                      onAlternar={() => alternar(f.id)}
+                      onQuitar={() => quitarFaltante(f.id)}
+                    />
+                  ))}
+                </Grupo>
+              </View>
+            ) : (
+              <Text style={styles.todoListo}>Ya tienes todo en el carrito.</Text>
+            )}
 
-      {seleccionados.length > 0 && (
-        <View style={{ gap: spacing.sm }}>
-          <Boton titulo={`Terminar compra (${seleccionados.length})`} icono="bolsa-lista" onPress={terminar} />
-          <Nota>Se agregan a tu despensa con la fecha de hoy. Después puedes editar su caducidad.</Nota>
+            {marcados.length > 0 && (
+              <View style={styles.grupo}>
+                <CabeceraGrupo titulo="En el carrito" cuenta={marcados.length} />
+                <Grupo sangria={60}>
+                  {marcados.map((f) => (
+                    <FilaFaltante
+                      key={f.id}
+                      item={f}
+                      marcado
+                      onAlternar={() => alternar(f.id)}
+                      onQuitar={() => quitarFaltante(f.id)}
+                    />
+                  ))}
+                </Grupo>
+                <Nota>Al guardar entran a tu despensa con la fecha de hoy. Después puedes ponerles su caducidad.</Nota>
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      {marcados.length > 0 && (
+        <View style={[styles.pie, { paddingBottom: espacioInferior, paddingRight: spacing.lg + hueco }]}>
+          <Boton
+            titulo={marcados.length === 1 ? 'Guardar 1 en mi despensa' : `Guardar ${marcados.length} en mi despensa`}
+            icono="bolsa-lista"
+            onPress={terminar}
+          />
         </View>
       )}
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: ui.fondo },
   contenido: {
-    padding: spacing.lg, paddingBottom: 150, gap: spacing.xl,
+    padding: spacing.lg, gap: spacing.xl,
     maxWidth: 640, width: '100%', alignSelf: 'center',
   },
   agregar: { flexDirection: 'row', alignItems: 'center', paddingRight: spacing.md },
-  agregarBoton: { width: 30, height: 30, borderRadius: 15, backgroundColor: ui.accion, alignItems: 'center', justifyContent: 'center' },
-  fila: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    paddingHorizontal: spacing.lg, paddingVertical: 11, minHeight: 56, backgroundColor: ui.tarjeta,
+  agregarBoton: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: ui.accion,
+    alignItems: 'center', justifyContent: 'center',
   },
-  nombre: { fontSize: 16, fontWeight: '500', color: ui.texto },
-  nombreMarcado: { textDecorationLine: 'line-through', color: ui.textoSecundario },
-  detalle: { fontSize: 13, color: ui.textoSecundario, marginTop: 1 },
+  grupo: { gap: spacing.sm },
+  todoListo: { fontSize: 15, color: ui.textoSecundario, textAlign: 'center', lineHeight: 20 },
+  pie: {
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md, backgroundColor: ui.fondo,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ui.separador,
+  },
 });
