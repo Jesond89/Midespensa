@@ -3,6 +3,11 @@
 -- Autenticación anónima + miembros_hogar + Row Level Security (RLS)
 -- IMPORTANTE: después de este archivo ejecuta supabase/migrations/001_seguridad_auth.sql
 -- (hash bcrypt de contraseñas, refresh tokens y permisos de la columna clave).
+-- Para dejar la base como esta hoy, ejecutar en este orden:
+--   1. este archivo (schema.sql)
+--   2. migrations/001_seguridad_auth.sql      (bcrypt + JWT + refresh tokens)
+--   3. migrations/002_cerrar_acceso_datos.sql (cierra el acceso anonimo)
+
 -- =========================================================================
 
 -- 1. HOGARES
@@ -85,110 +90,36 @@ CREATE INDEX IF NOT EXISTS idx_hogares_codigo ON public.hogares(codigo_invitacio
 
 -- =========================================================================
 -- ROW LEVEL SECURITY (RLS)
+--
+-- OJO: este bloque describe el estado REAL de la base despues de aplicar
+-- supabase/migrations/001 y 002. Las politicas que vivian aqui antes
+-- (miembros_ven_productos y companía) nunca llegaron a la base: lo que
+-- habia en produccion eran politicas *_acceso_total con USING (true) para
+-- anon, es decir, acceso total de cualquiera a los datos de todos los
+-- hogares. La migracion 002 las elimino.
+--
+-- Modelo de acceso actual:
+--   - RLS encendido en todas las tablas y SIN politicas: por la API de
+--     Supabase (anon/authenticated) no se lee ni se escribe ninguna tabla.
+--   - La app nunca habla directo con Supabase. Pasa por el servidor de Expo:
+--       * /api/auth/*     -> cliente anon -> funciones auth_* SECURITY DEFINER
+--       * /api/datos      -> clave secreta, filtrando por el hogar_id del JWT
+--       * /api/reconocer  -> JWT + Gemini (la clave no sale del servidor)
+--   - Lo unico que anon puede ejecutar son las 4 funciones auth_*.
+--
+-- Asi se cumple RNF-01: un hogar no alcanza los datos de otro, porque el
+-- hogar_id sale del token firmado y nunca de lo que mande el cliente.
 -- =========================================================================
 
-ALTER TABLE public.hogares ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.hogares        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.miembros_hogar ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.productos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.faltantes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.recetas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.productos      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faltantes      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recetas        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.integrantes    ENABLE ROW LEVEL SECURITY;
 
--- Políticas para HOGARES
-CREATE POLICY "permitir_lectura_hogares_anon" ON public.hogares
-  FOR SELECT TO anon
-  USING (true);
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC, anon, authenticated;
 
-CREATE POLICY "permitir_insert_hogares_anon" ON public.hogares
-  FOR INSERT TO anon
-  WITH CHECK (true);
-
-CREATE POLICY "miembros_ven_su_hogar" ON public.hogares
-  FOR SELECT TO authenticated
-  USING (
-    id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "admin_edita_su_hogar" ON public.hogares
-  FOR UPDATE TO authenticated
-  USING (
-    id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid() AND mh.rol = 'admin')
-  )
-  WITH CHECK (
-    id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid() AND mh.rol = 'admin')
-  );
-
--- Políticas para MIEMBROS_HOGAR
-CREATE POLICY "ver_miembros_de_mi_hogar" ON public.miembros_hogar
-  FOR SELECT TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "admin_gestiona_miembros" ON public.miembros_hogar
-  FOR ALL TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid() AND mh.rol = 'admin')
-  )
-  WITH CHECK (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid() AND mh.rol = 'admin')
-  );
-
--- Políticas para PRODUCTOS
-CREATE POLICY "miembros_ven_productos" ON public.productos
-  FOR SELECT TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "miembros_insertan_productos" ON public.productos
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "miembros_actualizan_productos" ON public.productos
-  FOR UPDATE TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  )
-  WITH CHECK (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
--- Políticas para FALTANTES
-CREATE POLICY "miembros_ven_faltantes" ON public.faltantes
-  FOR SELECT TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "miembros_insertan_faltantes" ON public.faltantes
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "miembros_actualizan_faltantes" ON public.faltantes
-  FOR UPDATE TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  )
-  WITH CHECK (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
-CREATE POLICY "miembros_eliminan_faltantes" ON public.faltantes
-  FOR DELETE TO authenticated
-  USING (
-    hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
-
--- Políticas para RECETAS
-CREATE POLICY "ver_recetas" ON public.recetas
-  FOR SELECT TO authenticated
-  USING (
-    hogar_id IS NULL OR hogar_id IN (SELECT mh.hogar_id FROM public.miembros_hogar mh WHERE mh.auth_uid = auth.uid())
-  );
 
 -- =========================================================================
 -- FUNCIONES RPC (SECURITY DEFINER)
