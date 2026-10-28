@@ -12,9 +12,9 @@ const MODELO = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 const URL_API = `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`;
 const TIPOS = ['image/jpeg'] as const; // la app siempre manda JPEG reducido
 type TipoImagen = (typeof TIPOS)[number];
-// Un JPEG de 768 px a calidad 0.6 pesa ~100-250 KB; 500 KB deja margen y corta abusos.
-const MAX_BYTES = 500 * 1024;
-const MAX_SALIDA_TOKENS = 2048;
+// Un JPEG de 1024 px a calidad 0.6 pesa ~200-400 KB; 900 KB deja margen y corta abusos.
+const MAX_BYTES = 900 * 1024;
+const MAX_SALIDA_TOKENS = 8192;
 
 // Acceso: solo hogares con sesión iniciada (JWT de acceso vigente, emitido por
 // /api/auth/*). El token prueba a qué hogar pertenece quien escanea, así que
@@ -102,35 +102,63 @@ export async function POST(request: Request) {
         },
       }),
     });
-  } catch {
+  } catch (e) {
+    console.error('[reconocer] no se pudo contactar a Gemini:', e);
     return error('sin-conexion', 502);
   }
 
   if (!respuesta.ok) {
+    // El cuerpo del error de Gemini nunca trae la clave (va en el header),
+    // asi que es seguro registrarlo y es lo unico que explica un 400.
+    const cuerpo = await respuesta.text().catch(() => '');
+    console.error(`[reconocer] Gemini HTTP ${respuesta.status} modelo=${MODELO}:`, cuerpo.slice(0, 800));
     if (respuesta.status === 429) return error('ocupado', 429);
     if (respuesta.status === 401 || respuesta.status === 403) return error('clave-invalida', 503);
     if (respuesta.status === 400) {
-      const cuerpo = await respuesta.text().catch(() => '');
-      return /API key|API_KEY/i.test(cuerpo) ? error('clave-invalida', 503) : error('imagen-invalida', 400);
+      return /API[ _]?key/i.test(cuerpo) ? error('clave-invalida', 503) : error('peticion-invalida', 502);
     }
     return error('servicio', 502);
   }
 
   const datos = await respuesta.json().catch(() => null);
-  if (datos?.promptFeedback?.blockReason) return error('rechazo', 422);
+  if (datos?.promptFeedback?.blockReason) {
+    console.warn('[reconocer] bloqueada por', datos.promptFeedback.blockReason);
+    return error('rechazo', 422);
+  }
+
   const candidato = datos?.candidates?.[0];
-  if (!candidato || ['SAFETY', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY'].includes(candidato.finishReason)) return error('rechazo', 422);
+  const fin: string | undefined = candidato?.finishReason;
+  if (!candidato || ['SAFETY', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY', 'RECITATION'].includes(fin ?? '')) {
+    console.warn('[reconocer] sin candidato utilizable, finishReason=', fin);
+    return error('rechazo', 422);
+  }
+  // Se quedo sin espacio de salida: el JSON llega cortado y no se puede parsear.
+  if (fin === 'MAX_TOKENS') {
+    console.warn('[reconocer] respuesta truncada (MAX_TOKENS). Tokens:', JSON.stringify(datos?.usageMetadata ?? {}));
+    return error('demasiados-productos', 502);
+  }
 
   const texto: unknown = candidato.content?.parts?.find((p: { text?: string }) => typeof p.text === 'string')?.text;
-  if (typeof texto !== 'string') return error('sin-resultado', 502);
+  if (typeof texto !== 'string') {
+    console.error('[reconocer] el candidato no trae texto. finishReason=', fin, 'partes=', JSON.stringify(candidato.content?.parts ?? []).slice(0, 300));
+    return error('sin-resultado', 502);
+  }
+
+  // A veces envuelve el JSON en ```json ... ``` aunque se pida application/json.
+  const limpio = texto.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
 
   let json: unknown;
   try {
-    json = JSON.parse(texto);
+    json = JSON.parse(limpio);
   } catch {
+    console.error('[reconocer] JSON invalido. finishReason=', fin, 'inicio=', limpio.slice(0, 200), 'fin=', limpio.slice(-120));
     return error('sin-resultado', 502);
   }
+
   const validado = EsquemaEscaneo.safeParse(json);
-  if (!validado.success) return error('sin-resultado', 502);
+  if (!validado.success) {
+    console.error('[reconocer] no cumple el esquema:', JSON.stringify(validado.error.issues).slice(0, 500));
+    return error('sin-resultado', 502);
+  }
   return Response.json(validado.data);
 }

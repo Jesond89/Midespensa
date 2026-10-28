@@ -2,11 +2,11 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { ResultadoEscaneo } from './esquemaEscaneo';
 import { fetchAutenticado } from './auth';
 
-// Escaneo de compras desde la app: reduce la foto (a 768 px por lado Gemini
+// Escaneo de compras desde la app: reduce la foto (a 1024 px por lado Gemini
 // cobra pocos tokens por imagen y las etiquetas aún se leen; así también se envía rápido) y la manda a la ruta
 // de servidor /api/reconocer, que es la única que conoce la clave.
 
-const LADO_MAX = 768;
+const LADO_MAX = 1024;
 
 export class ErrorEscaneo extends Error {}
 
@@ -14,6 +14,9 @@ const MENSAJES: Record<string, string> = {
   'sin-clave': 'El escaneo todavía no está configurado en el servidor. Mientras, agrégalos a mano.',
   'clave-invalida': 'La clave del escaneo no es válida. Mientras, agrégalos a mano.',
   'limite': 'Llegaste al límite de escaneos por ahora. Intenta más tarde o agrégalos a mano.',
+  'demasiados-productos': 'Se vieron demasiados productos en una sola foto. Toma dos fotos con menos cosas.',
+  'peticion-invalida': 'El escaneo no esta configurado correctamente. Avisa a quien administra la app.',
+  'servicio': 'El servicio de escaneo falló. Intenta de nuevo en un momento.',
   'ocupado': 'El escaneo está ocupado. Espera unos segundos y vuelve a intentar.',
   'imagen-grande': 'La foto es demasiado pesada. Intenta con otra.',
   'imagen-invalida': 'No se pudo leer la foto. Intenta con otra.',
