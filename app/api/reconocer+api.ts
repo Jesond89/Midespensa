@@ -11,7 +11,10 @@ import { autenticar } from '../../src/server/auth';
 // gemini-2.5-flash-lite fue retirado para cuentas nuevas (404). Si Google
 // vuelve a cambiar el catalogo, basta con poner GEMINI_MODEL en el entorno.
 const MODELO = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-const URL_API = `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`;
+// Interactions API: es donde Google documenta hoy la salida estructurada.
+// generateContent sigue soportado pero su responseJsonSchema ya no funciona
+// con los modelos 3.x (devolvia 400 INVALID_ARGUMENT sin detalle).
+const URL_API = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const TIPOS = ['image/jpeg'] as const; // la app siempre manda JPEG reducido
 type TipoImagen = (typeof TIPOS)[number];
 // Un JPEG de 1024 px a calidad 0.6 pesa ~200-400 KB; 900 KB deja margen y corta abusos.
@@ -78,42 +81,55 @@ export async function POST(request: Request) {
   if (typeof imagen !== 'string' || !imagen || !TIPOS.includes(tipo as TipoImagen)) return error('solicitud-invalida', 400);
   if (imagen.length * 0.75 > MAX_BYTES) return error('imagen-grande', 413);
 
-  let respuesta: Response;
-  try {
-    respuesta = await fetch(URL_API, {
+  // Las instrucciones van como primer texto del input en vez de
+  // system_instruction: la referencia lo documenta dentro de agent_config y no
+  // en el cuerpo de la peticion, asi que esta forma evita otro INVALID_ARGUMENT.
+  const cuerpoBase = {
+    model: MODELO,
+    input: [
+      { type: 'image', mime_type: tipo, data: imagen },
+      { type: 'text', text: `${INSTRUCCIONES}\n\nRegistra los productos de esta foto.` },
+    ],
+    generation_config: {
+      max_output_tokens: MAX_SALIDA_TOKENS,
+      thinking_level: 'minimal', // menos tokens de salida
+    },
+  };
+
+  const llamar = (conEsquema: boolean) =>
+    fetch(URL_API, {
       method: 'POST',
       // La clave va en el header, no en la URL, para que no quede en logs de proxies.
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: INSTRUCCIONES }] },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType: tipo, data: imagen } },
-              { text: 'Registra los productos de esta foto.' },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: MAX_SALIDA_TOKENS,
-          thinkingConfig: { thinkingBudget: 0 }, // sin "pensar": ahorra tokens de salida
-          responseMimeType: 'application/json',
-          responseJsonSchema: ESQUEMA_JSON,
-        },
-      }),
+      body: JSON.stringify(
+        conEsquema
+          ? { ...cuerpoBase, response_format: { type: 'text', mime_type: 'application/json', schema: ESQUEMA_JSON } }
+          : cuerpoBase
+      ),
     });
+
+  // Primero con esquema. Si lo rechaza (un esquema grande puede dar 400), se
+  // reintenta sin el: el prompt ya pide JSON y zod valida igual al final.
+  let respuesta: Response;
+  let conEsquema = true;
+  try {
+    respuesta = await llamar(true);
+    if (respuesta.status === 400) {
+      const detalle = await respuesta.text().catch(() => '');
+      console.warn('[reconocer] 400 con response_format, reintentando sin esquema:', detalle.slice(0, 400));
+      conEsquema = false;
+      respuesta = await llamar(false);
+    }
   } catch (e) {
     console.error('[reconocer] no se pudo contactar a Gemini:', e);
     return error('sin-conexion', 502);
   }
 
   if (!respuesta.ok) {
-    // El cuerpo del error de Gemini nunca trae la clave (va en el header),
-    // asi que es seguro registrarlo y es lo unico que explica un 400.
+    // El cuerpo del error nunca trae la clave (va en el header), asi que es
+    // seguro registrarlo y es lo unico que explica un 400.
     const cuerpo = await respuesta.text().catch(() => '');
-    console.error(`[reconocer] Gemini HTTP ${respuesta.status} modelo=${MODELO}:`, cuerpo.slice(0, 800));
+    console.error(`[reconocer] Gemini HTTP ${respuesta.status} modelo=${MODELO} esquema=${conEsquema}:`, cuerpo.slice(0, 800));
     if (respuesta.status === 429) return error('ocupado', 429);
     if (respuesta.status === 401 || respuesta.status === 403) return error('clave-invalida', 503);
     if (respuesta.status === 400) {
@@ -123,27 +139,19 @@ export async function POST(request: Request) {
   }
 
   const datos = await respuesta.json().catch(() => null);
-  if (datos?.promptFeedback?.blockReason) {
-    console.warn('[reconocer] bloqueada por', datos.promptFeedback.blockReason);
-    return error('rechazo', 422);
-  }
 
-  const candidato = datos?.candidates?.[0];
-  const fin: string | undefined = candidato?.finishReason;
-  if (!candidato || ['SAFETY', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY', 'RECITATION'].includes(fin ?? '')) {
-    console.warn('[reconocer] sin candidato utilizable, finishReason=', fin);
-    return error('rechazo', 422);
-  }
-  // Se quedo sin espacio de salida: el JSON llega cortado y no se puede parsear.
-  if (fin === 'MAX_TOKENS') {
-    console.warn('[reconocer] respuesta truncada (MAX_TOKENS). Tokens:', JSON.stringify(datos?.usageMetadata ?? {}));
-    return error('demasiados-productos', 502);
-  }
+  // La respuesta es una lista de pasos; el texto esta en el paso model_output.
+  type Parte = { type?: string; text?: string };
+  type Paso = { type?: string; content?: Parte[] };
+  const pasos: Paso[] = Array.isArray(datos?.steps) ? datos.steps : [];
+  const salida = pasos.filter((p) => p.type === 'model_output').pop();
+  const texto = salida?.content?.find((c) => c.type === 'text' && typeof c.text === 'string')?.text;
 
-  const texto: unknown = candidato.content?.parts?.find((p: { text?: string }) => typeof p.text === 'string')?.text;
-  if (typeof texto !== 'string') {
-    console.error('[reconocer] el candidato no trae texto. finishReason=', fin, 'partes=', JSON.stringify(candidato.content?.parts ?? []).slice(0, 300));
-    return error('sin-resultado', 502);
+  if (typeof texto !== 'string' || !texto.trim()) {
+    const tipos = pasos.map((p) => p.type).join(',');
+    console.error('[reconocer] sin texto en la respuesta. pasos=', tipos, 'crudo=', JSON.stringify(datos ?? {}).slice(0, 500));
+    // Si el modelo se nego o la foto fue bloqueada, suele no haber model_output.
+    return error(pasos.length ? 'rechazo' : 'sin-resultado', pasos.length ? 422 : 502);
   }
 
   // A veces envuelve el JSON en ```json ... ``` aunque se pida application/json.
@@ -153,7 +161,7 @@ export async function POST(request: Request) {
   try {
     json = JSON.parse(limpio);
   } catch {
-    console.error('[reconocer] JSON invalido. finishReason=', fin, 'inicio=', limpio.slice(0, 200), 'fin=', limpio.slice(-120));
+    console.error('[reconocer] JSON invalido. esquema=', conEsquema, 'inicio=', limpio.slice(0, 200), 'fin=', limpio.slice(-120));
     return error('sin-resultado', 502);
   }
 
