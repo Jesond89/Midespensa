@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   datoEtiqueta: { fontSize: 16, color: ui.texto },
   datoValor: { fontSize: 16, color: ui.textoSecundario, textAlign: 'right' },
-  datoDetalle: { fontSize: 12, color: ui.textoTerciario, marginTop: 1 },
+  datoDetalle: { fontSize: 12, color: ui.textoSecundario, marginTop: 1 },
   accionTitulo: { flex: 1, fontSize: 16, letterSpacing: -0.2 },
   vacio: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl, gap: spacing.sm },
   vacioTitulo: { fontSize: 17, fontWeight: '600', color: ui.texto, marginTop: spacing.xs },

@@ -59,5 +59,5 @@ const styles = StyleSheet.create({
   subtitulo: { fontSize: 17, lineHeight: 24, letterSpacing: -0.2, textAlign: 'center', color: ui.textoSecundario },
   acciones: { gap: spacing.md, paddingBottom: spacing.xl, maxWidth: 420, width: '100%', alignSelf: 'center' },
   privacidad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 0 },
-  privacidadTexto: { fontSize: 13, color: ui.textoTerciario },
+  privacidadTexto: { fontSize: 13, color: ui.textoSecundario },
 });

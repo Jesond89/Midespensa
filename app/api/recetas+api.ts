@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EsquemaRecetas, MAX_PASOS, MAX_RECETAS, MAX_USA, type RecetaGenerada } from '../../src/services/esquemaRecetas';
 import { autenticar } from '../../src/server/auth';
+import { consumirUsoIa } from '../../src/server/limite';
 import { admin } from '../../src/server/supabaseAdmin';
 import { ErrorConfiguracion } from '../../src/server/jwt';
 import { diasHasta } from '../../src/utils/fechas';
@@ -32,24 +33,10 @@ const LIMITE_REINTENTO_MS = 6000;
 // cortaba la conexion antes de que Gemini respondiera.
 const MAX_PRODUCTOS = 30;
 
-// Límite diario por hogar, como los 10 escaneos de /api/reconocer. Aquí son 8:
-// la petición es solo texto (sin imagen), así que cuesta bastante menos que un
-// escaneo, pero la despensa casi no cambia entre un toque y el siguiente, así
-// que arriba de ~8 generaciones al día ya solo son toques repetidos del botón.
-// Alcanza para las tres comidas del día y dos o tres reintentos.
-const LIMITE_POR_DIA = 8;
-const usos = new Map<string, { n: number; reinicia: number }>();
-
-function dentroDelLimite(codigo: string) {
-  const ahora = Date.now();
-  const u = usos.get(codigo);
-  if (!u || u.reinicia < ahora) {
-    usos.set(codigo, { n: 1, reinicia: ahora + 24 * 60 * 60 * 1000 });
-    return true;
-  }
-  u.n += 1;
-  return u.n <= LIMITE_POR_DIA;
-}
+// El límite diario por hogar (8 generaciones, contra los 10 escaneos de
+// /api/reconocer) y el conteo viven en src/server/limite.ts. Lo lleva Postgres
+// y no un Map en memoria, porque ese volvía a cero en cada despliegue de
+// Railway y le regalaba otro cupo completo a cada hogar.
 
 const INSTRUCCIONES = `Cocina casera mexicana. Te doy el inventario de una despensa y me das ${MAX_RECETAS} recetas distintas que se puedan preparar HOY con eso.
 - Prioriza los productos marcados "URGENTE" y "pronto": la idea es que no se echen a perder.
@@ -207,7 +194,8 @@ export async function POST(request: Request) {
   // Con uno o dos productos no sale una receta decente: se avisa sin gastar la cuota.
   if (utiles.length < 2) return error('despensa-vacia', 422);
 
-  if (!dentroDelLimite(hogarId)) return error('limite', 429);
+  const bloqueo = await consumirUsoIa(hogarId, 'recetas');
+  if (bloqueo) return error(bloqueo.codigo, bloqueo.status);
 
   const nombres = utiles.map((p) => p.nombre.trim());
   const inventario = utiles.map(describir).join('\n');

@@ -3,7 +3,6 @@ import type { NombreIcono } from '../components/ui/Icono';
 import type { ItemFaltante, Producto } from '../data/mock';
 import type { Hogar } from '../state/SesionProvider';
 import { UBICACIONES } from '../data/catalogo';
-import { recetasMock } from '../data/mock';
 import { estaCaducado, estaPorCaducar, estadoCaducidad, ordenarPorCaducidad } from '../utils/caducidad';
 import { cantidadTexto } from '../utils/cantidad';
 import { haceCuanto } from '../utils/fechas';
@@ -310,32 +309,25 @@ const cocina: Tema = {
         };
       }
       case 'idea': {
-        const nombres = new Set(ctx.productos.map((p) => p.nombre.toLowerCase()));
-        const urgentes = new Set(porCaducar(ctx).map((p) => p.nombre.toLowerCase()));
-        // La mejor receta: la que usa más de lo que tienes, y en empate, más de lo que caduca pronto.
-        const mejor = recetasMock
-          .map((r) => ({
-            r,
-            tiene: r.usa.filter((i) => nombres.has(i.toLowerCase())).length,
-            urgentes: r.usa.filter((i) => urgentes.has(i.toLowerCase())).length,
-          }))
-          .sort((a, b) => b.tiene - a.tiene || b.urgentes - a.urgentes)[0];
-        if (!mejor || mejor.tiene === 0) {
+        if (ctx.productos.length === 0) return SIN_PRODUCTOS;
+        const utiles = ctx.productos.filter((p) => !estaCaducado(p)).sort(ordenarPorCaducidad);
+        if (utiles.length === 0) {
           return {
-            globos: ['Todavía no se me ocurre nada con lo que hay.', 'Agrega más productos y lo intento de nuevo.'],
-            opciones: [IR_AGREGAR],
+            globos: [
+              'Todo lo que tienes registrado ya caducó, así que no te propongo nada con eso.',
+              'Revísalo y repón lo que haga falta; con tu despensa al día te salen recetas en "¿Qué cocino?".',
+            ],
+            opciones: [IR_CADUCADOS, IR_COCINA],
           };
         }
+        const urgentes = porCaducar(ctx);
+        const destacados = (urgentes.length > 0 ? urgentes : utiles).slice(0, 5);
         return {
           globos: [
-            `Te propongo: ${mejor.r.titulo}.`,
-            {
-              texto: 'Ingredientes:',
-              items: mejor.r.usa.map((i): Item => nombres.has(i.toLowerCase())
-                ? { texto: i, detalle: 'lo tienes', tono: ui.fresco }
-                : { texto: i, detalle: 'te falta', tono: ui.textoSecundario }),
-            },
-            { texto: 'Preparación:', numerada: true, items: mejor.r.pasos },
+            urgentes.length > 0
+              ? { texto: 'Yo cocinaría con esto, que caduca pronto:', items: destacados.map(conEstado) }
+              : { texto: 'Nada caduca pronto, así que empieza por lo que tienes más cerca de su fecha:', items: destacados.map(conEstado) },
+            'Las recetas las armamos en "¿Qué cocino?": ahí toca "Sugerir recetas" y salen platillos con tu despensa, empezando por eso.',
           ],
           opciones: [IR_COCINA],
         };
@@ -344,7 +336,7 @@ const cocina: Tema = {
         return {
           globos: [
             'En "¿Qué cocino?" toca "Sugerir recetas" y te propongo platillos con lo que hay en tu despensa, empezando por lo que caduca pronto.',
-            'Por ahora son recetas de prueba; pronto las generará una inteligencia artificial.',
+            'Las arma una inteligencia artificial con tu inventario, así que cada vez pueden salir distintas.',
           ],
           opciones: [IR_COCINA],
         };

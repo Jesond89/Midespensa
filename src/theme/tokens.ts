@@ -11,7 +11,8 @@ export const ui = {
   separador: '#E3E3E8',
   texto: '#1D1D1F',
   textoSecundario: '#6E6E73',
-  textoTerciario: '#AEAEB2',
+  textoTerciario: '#AEAEB2', // 2.2:1 — SOLO adornos (chevrons, iconos, deshabilitado).
+                             // Para texto que se lee, usa textoSecundario.
   icono: '#8E8E93',
   accion: '#1D1D1F',
   accionTexto: '#FFFFFF',
@@ -19,7 +20,7 @@ export const ui = {
 
   // Semáforo de caducidad (RF-05 / HU-03), tonos apagados.
   fresco: '#2F7D4F',
-  porVencer: '#A86A12',
+  porVencer: '#9C6210',      // 5.04:1 sobre blanco; con #A86A12 quedaba en 4.43
   urgente: '#B3261E',
   sinFecha: '#8E8E93',
 } as const;

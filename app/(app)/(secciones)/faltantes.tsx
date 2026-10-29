@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Icono } from '../../../src/components/ui/Icono';
@@ -29,10 +29,13 @@ export default function Faltantes() {
 
   const vibra = (tipo: keyof typeof vibrar) => { if (prefs.vibracion) vibrar[tipo](); };
 
-  const alternar = (id: string) => {
-    vibra('seleccion');
+  // Estables entre renders para que las filas memoizadas no se redibujen.
+  const alternar = useCallback((id: string) => {
+    if (prefs.vibracion) vibrar.seleccion();
     setSeleccionados((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
-  };
+  }, [prefs.vibracion]);
+
+  const quitar = useCallback((id: string) => quitarFaltante(id), [quitarFaltante]);
 
   const agregar = () => {
     if (!nuevo.trim()) return;
@@ -114,8 +117,8 @@ export default function Faltantes() {
                       key={f.id}
                       item={f}
                       marcado={false}
-                      onAlternar={() => alternar(f.id)}
-                      onQuitar={() => quitarFaltante(f.id)}
+                      onAlternar={alternar}
+                      onQuitar={quitar}
                     />
                   ))}
                 </Grupo>
@@ -133,8 +136,8 @@ export default function Faltantes() {
                       key={f.id}
                       item={f}
                       marcado
-                      onAlternar={() => alternar(f.id)}
-                      onQuitar={() => quitarFaltante(f.id)}
+                      onAlternar={alternar}
+                      onQuitar={quitar}
                     />
                   ))}
                 </Grupo>

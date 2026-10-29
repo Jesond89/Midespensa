@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EsquemaEscaneo } from '../../src/services/esquemaEscaneo';
 import { autenticar } from '../../src/server/auth';
+import { consumirUsoIa } from '../../src/server/limite';
 import { CATEGORIAS, UBICACIONES, UNIDADES } from '../../src/data/catalogo';
 
 // POST /api/reconocer — recibe una foto de las compras o de la alacena y
@@ -24,20 +25,10 @@ const MAX_SALIDA_TOKENS = 8192;
 
 // Acceso: solo hogares con sesión iniciada (JWT de acceso vigente, emitido por
 // /api/auth/*). El token prueba a qué hogar pertenece quien escanea, así que
-// aquí ya no hace falta consultar Supabase. Además hay un límite diario por hogar.
-const LIMITE_POR_DIA = 10;
-const usos = new Map<string, { n: number; reinicia: number }>();
-
-function dentroDelLimite(codigo: string) {
-  const ahora = Date.now();
-  const u = usos.get(codigo);
-  if (!u || u.reinicia < ahora) {
-    usos.set(codigo, { n: 1, reinicia: ahora + 24 * 60 * 60 * 1000 });
-    return true;
-  }
-  u.n += 1;
-  return u.n <= LIMITE_POR_DIA;
-}
+// aquí no hace falta preguntarle a Supabase quién es. Además hay un límite
+// diario por hogar, que ahora cuenta Postgres (src/server/limite.ts): el Map
+// en memoria que lo llevaba antes volvía a cero en cada despliegue de Railway,
+// o sea que cada despliegue le regalaba otro cupo completo a cada hogar.
 
 const INSTRUCCIONES = `Inventario de despensa (México). Foto de compras, alacena o refri. Lista cada producto distinto de comida o bebida visible; ignora todo lo demás.
 - Agrupa idénticos: "cantidad" = cuántos, "unidad" = cómo se cuenta (pieza, paquete, lata, frasco, manojo, docena); kg/g/L/ml solo si es un envase y se lee el contenido.
@@ -124,7 +115,6 @@ export async function POST(request: Request) {
   } catch {
     return error('sin-configurar', 503);
   }
-  if (!dentroDelLimite(hogarId)) return error('limite', 429);
 
   // Rechaza cuerpos enormes antes de leerlos (base64 pesa ~1.37x el archivo).
   const largo = Number(request.headers.get('content-length') ?? 0);
@@ -139,6 +129,11 @@ export async function POST(request: Request) {
   }
   if (typeof imagen !== 'string' || !imagen || !TIPOS.includes(tipo as TipoImagen)) return error('solicitud-invalida', 400);
   if (imagen.length * 0.75 > MAX_BYTES) return error('imagen-grande', 413);
+
+  // El uso se cuenta hasta aquí: una foto que se iba a rechazar por tamaño o
+  // por formato no debe gastarle al hogar uno de sus escaneos del día.
+  const bloqueo = await consumirUsoIa(hogarId, 'escaneo');
+  if (bloqueo) return error(bloqueo.codigo, bloqueo.status);
 
   // Las instrucciones van como primer texto del input en vez de
   // system_instruction: la referencia lo documenta dentro de agent_config y no

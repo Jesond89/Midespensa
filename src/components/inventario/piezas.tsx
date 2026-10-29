@@ -52,7 +52,7 @@ export function plazoCorto(producto: Pick<Producto, 'fechaCaducidad'>) {
  * cantidad y el lugar van abajo en chico y el plazo se alinea a la derecha
  * para formar una columna.
  */
-export function FilaInventario({ producto }: { producto: Producto }) {
+function FilaInventarioBase({ producto }: { producto: Producto }) {
   const router = useRouter();
   const nivel = nivelDe(producto);
   const franja = franjaDe(nivel);
@@ -183,13 +183,17 @@ export function VacioAccion({ icono, titulo, texto, accion, secundaria }: {
  * Pensada para el súper y con una mano: toda la fila marca y desmarca, y
  * quitar está en su propio botón grande y separado para no borrar sin querer.
  */
-export function FilaFaltante({ item, marcado, onAlternar, onQuitar }: {
-  item: ItemFaltante; marcado: boolean; onAlternar: () => void; onQuitar: () => void;
+function FilaFaltanteBase({ item, marcado, onAlternar, onQuitar }: {
+  // Reciben el id al llamarlas, en vez de venir ya ligadas a el: con una
+  // flecha por fila la identidad cambiaba en cada render y React.memo no
+  // servia de nada.
+  item: ItemFaltante; marcado: boolean;
+  onAlternar: (id: string) => void; onQuitar: (id: string) => void;
 }) {
   const cantidad = cantidadTexto(item.cantidad, item.unidad);
   return (
     <Pressable
-      onPress={onAlternar}
+      onPress={() => onAlternar(item.id)}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: marcado }}
       accessibilityLabel={`${item.nombre}, ${cantidad}`}
@@ -208,7 +212,7 @@ export function FilaFaltante({ item, marcado, onAlternar, onQuitar }: {
         </Text>
       </View>
       <Pressable
-        onPress={(e) => { e.stopPropagation(); onQuitar(); }}
+        onPress={(e) => { e.stopPropagation(); onQuitar(item.id); }}
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={`Quitar ${item.nombre} de la lista`}
@@ -266,3 +270,9 @@ const styles = StyleSheet.create({
   compraNombreMarcado: { textDecorationLine: 'line-through', color: ui.textoSecundario },
   compraQuitar: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 });
+
+// Las filas se memoizan: sin esto, cada tecla del buscador o cada cambio de
+// filtro vuelve a dibujar la lista entera. Los productos vienen de un useMemo,
+// asi que su identidad solo cambia cuando el producto cambio de verdad.
+export const FilaInventario = React.memo(FilaInventarioBase);
+export const FilaFaltante = React.memo(FilaFaltanteBase);

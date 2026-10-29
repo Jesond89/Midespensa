@@ -465,7 +465,7 @@ function FilaBorrador({ borrador: b, abierto, onAbrir, onCambiar, onQuitar }: {
           <IconoCuadro icono={iconoCategoria(b.categoria)} />
           <View style={{ flex: 1, opacity: b.incluir ? 1 : 0.45 }}>
             <View style={styles.filaEncabezado}>
-              <Text style={[styles.filaNombre, !b.nombre && { color: ui.textoTerciario }]} numberOfLines={1}>{b.nombre || 'Sin nombre'}</Text>
+              <Text style={[styles.filaNombre, !b.nombre && { color: ui.textoSecundario }]} numberOfLines={1}>{b.nombre || 'Sin nombre'}</Text>
               <MarcaConfianza revisar={b.revisar} confianza={b.confianza} />
             </View>
             <Text style={styles.filaDetalle} numberOfLines={1}>
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
   seccion: { gap: spacing.sm },
   seccionCabecera: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg },
   seccionTitulo: { fontSize: 13, fontWeight: '600', color: ui.textoSecundario, letterSpacing: 0.2 },
-  seccionCuenta: { fontSize: 13, fontWeight: '500', color: ui.textoTerciario },
+  seccionCuenta: { fontSize: 13, fontWeight: '500', color: ui.textoSecundario },
   porRevisar: { fontSize: 13, fontWeight: '500', color: ui.texto, lineHeight: 18, paddingHorizontal: spacing.lg },
   vacio: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   vacioTexto: { fontSize: 14, color: ui.textoSecundario, lineHeight: 20, textAlign: 'center' },

@@ -79,5 +79,5 @@ const styles = StyleSheet.create({
   inicialTexto: { fontSize: 15, fontWeight: '600', color: ui.texto },
   integranteNombre: { fontSize: 16, color: ui.texto },
   sinIntegrantes: { fontSize: 15, color: ui.textoSecundario, padding: spacing.lg },
-  version: { fontSize: 12, color: ui.textoTerciario, textAlign: 'center' },
+  version: { fontSize: 12, color: ui.textoSecundario, textAlign: 'center' },
 });

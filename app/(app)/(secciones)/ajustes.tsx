@@ -112,5 +112,5 @@ const styles = StyleSheet.create({
   textos: { flex: 1, gap: 2 },
   titulo: { fontSize: 16, color: ui.texto, letterSpacing: -0.2 },
   detalle: { fontSize: 13, color: ui.textoSecundario, lineHeight: 17 },
-  version: { fontSize: 12, color: ui.textoTerciario, textAlign: 'center' },
+  version: { fontSize: 12, color: ui.textoSecundario, textAlign: 'center' },
 });
