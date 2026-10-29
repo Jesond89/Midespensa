@@ -22,10 +22,15 @@ import { diasHasta } from '../../src/utils/fechas';
 const MODELO = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const URL_API = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 // Tres recetas con pasos cortos caben de sobra; el tope solo evita una salida fuga.
-const MAX_SALIDA_TOKENS = 2048;
+// 4096: el escaneo, que si responde, usa 8192. Si el modelo razona antes de
+// escribir, ese razonamiento tambien sale de este tope.
+const MAX_SALIDA_TOKENS = 4096;
 // La plataforma corta a los 30 s. Se responde antes para poder explicar
 // que tardo de mas, en vez de que el usuario reciba un error de red.
-const LIMITE_MS = 20000;
+// 28 s: la plataforma corta cerca de los 30, asi que este es el maximo que
+// nos deja responder a nosotros. Sirve ademas para medir cuanto tarda de
+// verdad, que es el dato que falta.
+const LIMITE_MS = 28000;
 // Más de esto no cabe en el prompt sin encarecerlo, y nadie cocina con 80 cosas.
 // 30 productos bastan: ya vienen ordenados por caducidad, asi que son los
 // mas relevantes. Con 80 la peticion tardaba mas de 30 s y la plataforma
@@ -203,9 +208,11 @@ export async function POST(request: Request) {
   // ese campo vive dentro de agent_config y en el cuerpo da INVALID_ARGUMENT.
   const cuerpoBase = {
     model: MODELO,
-    input: [
-      { type: 'text', text: `${INSTRUCCIONES}\n\nInventario de la despensa:\n${inventario}\n\nDame las ${MAX_RECETAS} recetas.` },
-    ],
+    // Cadena simple, no arreglo: la documentacion usa el arreglo para peticiones
+    // con imagen y una cadena cuando es solo texto. El escaneo (que si responde)
+    // manda imagen + texto; aqui el arreglo de un solo elemento era una
+    // diferencia sin motivo.
+    input: `${INSTRUCCIONES}\n\nInventario de la despensa:\n${inventario}\n\nDame las ${MAX_RECETAS} recetas.`,
     generation_config: {
       max_output_tokens: MAX_SALIDA_TOKENS,
       thinking_level: 'minimal', // menos tokens de salida
