@@ -20,7 +20,9 @@ const MENSAJES: Record<string, string> = {
   'sin-conexion': 'No hay conexión con el servicio de sugerencias. Revisa tu internet.',
   'no-autorizado': 'Tu sesión venció. Vuelve a iniciar sesión para pedir recetas.',
   'sin-configurar': 'El servidor todavía no está configurado para sugerir recetas.',
+  'tardo-demasiado': 'Las sugerencias tardaron demasiado. Intenta de nuevo; si sigue igual, registra menos productos a la vez.',
 };
+
 const GENERICO = 'No se pudieron sugerir recetas. Intenta de nuevo en un momento.';
 
 /** Pide al servidor recetas hechas con el inventario del hogar. */

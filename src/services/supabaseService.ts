@@ -51,9 +51,15 @@ export async function dbObtenerMiHogar(): Promise<Hogar | null> {
 }
 
 /** Carga la despensa del hogar de la sesion. */
-export async function dbCargarDespensa(_hogarId?: string): Promise<{ productos: Producto[]; faltantes: ItemFaltante[] }> {
+/**
+ * Devuelve null si NO se pudo cargar (servidor caido, sin internet). Eso es
+ * distinto de una despensa de verdad vacia: antes se devolvian listas vacias
+ * en ambos casos y el usuario veia su despensa en blanco, como si hubiera
+ * perdido todo. Con null, quien llama puede caer a la copia local guardada.
+ */
+export async function dbCargarDespensa(_hogarId?: string): Promise<{ productos: Producto[]; faltantes: ItemFaltante[] } | null> {
   const r = await pedir<{ productos: FilaProducto[]; faltantes: FilaFaltante[] }>({ accion: 'cargar' });
-  if (!r) return { productos: [], faltantes: [] };
+  if (!r) return null;
 
   const productos: Producto[] = (r.productos || []).map((row) => ({
     id: row.id,

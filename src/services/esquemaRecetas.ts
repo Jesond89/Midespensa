@@ -13,8 +13,8 @@ import { z } from 'zod';
 /** Cuántas recetas se piden por generación (y el máximo que se acepta). */
 export const MAX_RECETAS = 3;
 /** Topes de cada receta: acotan los tokens de salida y lo que cabe en pantalla. */
-export const MAX_USA = 12;
-export const MAX_PASOS = 8;
+export const MAX_USA = 8;
+export const MAX_PASOS = 5;
 
 // Las columnas de public.recetas son: id, hogar_id, titulo TEXT, usa JSONB,
 // pasos JSONB. Gemini solo escribe titulo/usa/pasos; id lo pone la base y

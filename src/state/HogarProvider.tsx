@@ -84,7 +84,10 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
           if (dbId) {
             setHogarDbId(dbId);
             const remota = await dbCargarDespensa(dbId);
-            if (vigente) {
+            // Si la carga fallo (remota === null) se deja datos en null para
+            // que abajo se use la copia guardada, en vez de mostrar la
+            // despensa vacia como si no hubiera nada.
+            if (vigente && remota) {
               datos = remota;
             }
           }

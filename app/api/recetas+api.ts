@@ -21,9 +21,16 @@ import { diasHasta } from '../../src/utils/fechas';
 const MODELO = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const URL_API = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 // Tres recetas con pasos cortos caben de sobra; el tope solo evita una salida fuga.
-const MAX_SALIDA_TOKENS = 4096;
+const MAX_SALIDA_TOKENS = 2048;
+// La plataforma corta a los 30 s. Se responde antes para poder explicar
+// que tardo de mas, en vez de que el usuario reciba un error de red.
+const LIMITE_MS = 20000;
+const LIMITE_REINTENTO_MS = 6000;
 // Más de esto no cabe en el prompt sin encarecerlo, y nadie cocina con 80 cosas.
-const MAX_PRODUCTOS = 80;
+// 30 productos bastan: ya vienen ordenados por caducidad, asi que son los
+// mas relevantes. Con 80 la peticion tardaba mas de 30 s y la plataforma
+// cortaba la conexion antes de que Gemini respondiera.
+const MAX_PRODUCTOS = 30;
 
 // Límite diario por hogar, como los 10 escaneos de /api/reconocer. Aquí son 8:
 // la petición es solo texto (sin imagen), así que cuesta bastante menos que un
@@ -218,11 +225,12 @@ export async function POST(request: Request) {
     },
   };
 
-  const llamar = (conEsquema: boolean) =>
+  const llamar = (conEsquema: boolean, ms: number) =>
     fetch(URL_API, {
       method: 'POST',
       // La clave va en el header, no en la URL, para que no quede en logs de proxies.
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave },
+      signal: AbortSignal.timeout(ms),
       body: JSON.stringify(
         conEsquema
           ? { ...cuerpoBase, response_format: { type: 'text', mime_type: 'application/json', schema: ESQUEMA_JSON } }
@@ -230,19 +238,28 @@ export async function POST(request: Request) {
       ),
     });
 
+  const esTimeout = (e: unknown) =>
+    e instanceof Error && (e.name === 'TimeoutError' || /timed? ?out/i.test(e.message));
+
   // Primero con esquema. Si lo rechaza (un 400 por el esquema), se reintenta
   // sin él: el prompt ya pide JSON y zod valida igual al final.
   let respuesta: Response;
   let conEsquema = true;
   try {
-    respuesta = await llamar(true);
+    respuesta = await llamar(true, LIMITE_MS);
     if (respuesta.status === 400) {
       const detalle = await respuesta.text().catch(() => '');
       console.warn('[recetas] 400 con response_format, reintentando sin esquema:', detalle.slice(0, 400));
       conEsquema = false;
-      respuesta = await llamar(false);
+      // El 400 llega rapido, pero el reintento solo dispone de lo que sobra
+      // del presupuesto: encadenar dos llamadas lentas fue lo que nos paso.
+      respuesta = await llamar(false, LIMITE_REINTENTO_MS);
     }
   } catch (e) {
+    if (esTimeout(e)) {
+      console.error(`[recetas] Gemini no respondio en ${LIMITE_MS} ms con ${utiles.length} productos`);
+      return error('tardo-demasiado', 504);
+    }
     console.error('[recetas] no se pudo contactar a Gemini:', e);
     return error('sin-conexion', 502);
   }
