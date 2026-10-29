@@ -26,7 +26,6 @@ const MAX_SALIDA_TOKENS = 2048;
 // La plataforma corta a los 30 s. Se responde antes para poder explicar
 // que tardo de mas, en vez de que el usuario reciba un error de red.
 const LIMITE_MS = 20000;
-const LIMITE_REINTENTO_MS = 6000;
 // Más de esto no cabe en el prompt sin encarecerlo, y nadie cocina con 80 cosas.
 // 30 productos bastan: ya vienen ordenados por caducidad, asi que son los
 // mas relevantes. Con 80 la peticion tardaba mas de 30 s y la plataforma
@@ -229,23 +228,21 @@ export async function POST(request: Request) {
   const esTimeout = (e: unknown) =>
     e instanceof Error && (e.name === 'TimeoutError' || /timed? ?out/i.test(e.message));
 
-  // Primero con esquema. Si lo rechaza (un 400 por el esquema), se reintenta
-  // sin él: el prompt ya pide JSON y zod valida igual al final.
+  // SIN response_format a proposito. El esquema de recetas lleva arreglos de
+  // texto libre anidados (usa, pasos) dentro de un arreglo de objetos: es la
+  // misma forma que Google rechazo en el escaneo por "too many states for
+  // serving". Aqui no da error, pero la generacion no respondia ni en 20 s ni
+  // con 22 productos. El prompt ya pide el JSON, zod lo valida y normalizar()
+  // lo repara, asi que el esquema no aportaba garantia, solo latencia.
   let respuesta: Response;
-  let conEsquema = true;
+  const conEsquema = false;
+  const t0 = Date.now();
   try {
-    respuesta = await llamar(true, LIMITE_MS);
-    if (respuesta.status === 400) {
-      const detalle = await respuesta.text().catch(() => '');
-      console.warn('[recetas] 400 con response_format, reintentando sin esquema:', detalle.slice(0, 400));
-      conEsquema = false;
-      // El 400 llega rapido, pero el reintento solo dispone de lo que sobra
-      // del presupuesto: encadenar dos llamadas lentas fue lo que nos paso.
-      respuesta = await llamar(false, LIMITE_REINTENTO_MS);
-    }
+    respuesta = await llamar(conEsquema, LIMITE_MS);
+    console.log(`[recetas] Gemini respondio en ${Date.now() - t0} ms (${utiles.length} productos)`);
   } catch (e) {
     if (esTimeout(e)) {
-      console.error(`[recetas] Gemini no respondio en ${LIMITE_MS} ms con ${utiles.length} productos`);
+      console.error(`[recetas] Gemini no respondio en ${LIMITE_MS} ms con ${utiles.length} productos (esquema=${conEsquema})`);
       return error('tardo-demasiado', 504);
     }
     console.error('[recetas] no se pudo contactar a Gemini:', e);
