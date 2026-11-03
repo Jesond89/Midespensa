@@ -1,7 +1,7 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { View, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { Grupo, Campo, BotonEncabezado } from '../../../src/components/ui/Formulario';
+import { Grupo, Campo, Boton, BotonEncabezado } from '../../../src/components/ui/Formulario';
 import { Icono, NombreIcono } from '../../../src/components/ui/Icono';
 import {
   CabeceraGrupo, FILTROS, FilaInventario, Filtro, FiltrosCaducidad, VacioAccion,
@@ -12,6 +12,7 @@ import { estaCaducado, estaPorCaducar, nivelDe, ordenarPorCaducidad } from '../.
 import type { Producto } from '../../../src/data/mock';
 import { ui, spacing } from '../../../src/theme/tokens';
 import { useEspacioInferior } from '../../../src/theme/navegacion';
+import { confirmar } from '../../../src/utils/confirmar';
 
 // Mi despensa: todo lo que hay en casa, ordenado por lo que caduca antes.
 //
@@ -23,6 +24,10 @@ import { useEspacioInferior } from '../../../src/theme/navegacion';
 
 // Lo que sube al grupo de arriba en "Todos".
 const urge = (p: Producto) => ['caducado', 'urgente'].includes(nivelDe(p));
+
+// Cuanto se recorre la caducidad con "Todavia sirven". Tres dias alcanzan
+// para consumirlo sin fingir que el producto esta como nuevo.
+const DIAS_SI_SIRVE = 3;
 
 type GrupoLista = {
   clave: string;
@@ -36,7 +41,10 @@ export default function Inventario() {
   const espacioInferior = useEspacioInferior();
   const router = useRouter();
   const params = useLocalSearchParams<{ filtro?: Filtro }>();
-  const { productos } = useHogar();
+  const { productos, marcarDesperdiciados, extenderCaducidad } = useHogar();
+  // Seleccion multiple SOLO en la vista de caducados: ahi es donde hay varios
+  // que resolver de golpe. En el resto, la fila sigue siendo solo un enlace.
+  const [seleccionados, setSeleccionados] = useState<string[]>([]);
   const [filtro, setFiltro] = useState<Filtro>(params.filtro ?? 'todos');
   const [busqueda, setBusqueda] = useState('');
   const navigation = useNavigation();
@@ -49,6 +57,37 @@ export default function Inventario() {
     setFiltroDelEnlace(params.filtro);
     if (params.filtro) setFiltro(params.filtro);
   }
+
+  const cambiarFiltro = useCallback((f: Filtro) => {
+    setSeleccionados([]); // lo marcado deja de estar a la vista: se descarta
+    setFiltro(f);
+  }, []);
+
+  const alternar = useCallback((id: string) => {
+    setSeleccionados((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const seleccionando = filtro === 'caducados';
+  const marcados = seleccionando ? seleccionados : [];
+
+  const tirar = useCallback(async () => {
+    const n = seleccionados.length;
+    const ok = await confirmar(
+      n === 1 ? 'Tirar el producto' : `Tirar ${n} productos`,
+      'Salen de tu despensa y entran a tu lista de compras para que los repongas.',
+      n === 1 ? 'Lo tiré' : 'Los tiré',
+    );
+    if (!ok) return;
+    marcarDesperdiciados(seleccionados);
+    setSeleccionados([]);
+  }, [seleccionados, marcarDesperdiciados]);
+
+  const siSirven = useCallback(() => {
+    // Las fechas de caducidad son conservadoras: muchas veces abres el
+    // producto y esta bien. Antes la unica salida era borrarlo y perderlo.
+    extenderCaducidad(seleccionados, DIAS_SI_SIRVE);
+    setSeleccionados([]);
+  }, [seleccionados, extenderCaducidad]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -167,7 +206,27 @@ export default function Inventario() {
         </View>
       </Grupo>
 
-      <FiltrosCaducidad actual={filtro} cuentas={cuentas} onCambiar={setFiltro} />
+      <FiltrosCaducidad actual={filtro} cuentas={cuentas} onCambiar={cambiarFiltro} />
+
+      {seleccionando && visibles.length > 0 && (
+        <View style={styles.acciones} accessibilityLiveRegion="polite">
+          <Text style={styles.accionesTexto}>
+            {marcados.length === 0
+              ? 'Marca los que ya revisaste'
+              : `${marcados.length} seleccionado${marcados.length === 1 ? '' : 's'}`}
+          </Text>
+          <View style={styles.accionesBotones}>
+            <View style={{ flex: 1 }}>
+              <Boton titulo="Todavía sirven" icono="check-circulo" variante="secundario"
+                deshabilitado={marcados.length === 0} onPress={siSirven} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Boton titulo="Los tiré" icono="basura"
+                deshabilitado={marcados.length === 0} onPress={tirar} />
+            </View>
+          </View>
+        </View>
+      )}
 
       {visibles.length === 0 ? (
         <VacioAccion {...vacio} />
@@ -176,7 +235,13 @@ export default function Inventario() {
           <View key={g.clave} style={styles.grupo}>
             <CabeceraGrupo icono={g.icono} titulo={g.titulo} cuenta={g.items.length} nota={g.nota} />
             <Grupo sangria={64}>
-              {g.items.map((p) => <FilaInventario key={p.id} producto={p} />)}
+              {g.items.map((p) => (
+                <FilaInventario
+                  key={p.id}
+                  producto={p}
+                  seleccion={seleccionando ? { marcado: marcados.includes(p.id), onAlternar: alternar } : undefined}
+                />
+              ))}
             </Grupo>
           </View>
         ))
@@ -196,6 +261,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg, gap: spacing.lg,
     maxWidth: 640, width: '100%', alignSelf: 'center',
   },
+  acciones: { gap: spacing.sm },
+  accionesTexto: { fontSize: 13, color: ui.textoSecundario, textAlign: 'center' },
+  accionesBotones: { flexDirection: 'row', gap: spacing.sm },
   buscar: { flexDirection: 'row', alignItems: 'center', paddingRight: spacing.md },
   limpiar: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: ui.relleno,

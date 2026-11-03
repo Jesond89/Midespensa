@@ -52,7 +52,15 @@ export function plazoCorto(producto: Pick<Producto, 'fechaCaducidad'>) {
  * cantidad y el lugar van abajo en chico y el plazo se alinea a la derecha
  * para formar una columna.
  */
-function FilaInventarioBase({ producto }: { producto: Producto }) {
+function FilaInventarioBase({ producto, seleccion }: {
+  producto: Producto;
+  /**
+   * Solo en la vista de caducados. La casilla selecciona y el resto de la
+   * fila sigue abriendo la ficha: asi no se pierde el camino de siempre al
+   * entrar en modo seleccion.
+   */
+  seleccion?: { marcado: boolean; onAlternar: (id: string) => void };
+}) {
   const router = useRouter();
   const nivel = nivelDe(producto);
   const franja = franjaDe(nivel);
@@ -67,7 +75,24 @@ function FilaInventarioBase({ producto }: { producto: Producto }) {
       style={({ pressed }) => [styles.fila, pressed && styles.filaPresionada]}
     >
       {franja && <View style={[styles.franja, { backgroundColor: franja }]} />}
-      <IconoCuadro icono={iconoCategoria(producto.categoria)} />
+      {seleccion ? (
+        <Pressable
+          onPress={(e) => { e.stopPropagation(); seleccion.onAlternar(producto.id); }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 6 }}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: seleccion.marcado }}
+          accessibilityLabel={`Seleccionar ${producto.nombre}`}
+          style={styles.casilla}
+        >
+          <Icono
+            nombre={seleccion.marcado ? 'check-circulo' : 'circulo'}
+            tamano={24}
+            color={seleccion.marcado ? ui.accion : ui.icono}
+          />
+        </Pressable>
+      ) : (
+        <IconoCuadro icono={iconoCategoria(producto.categoria)} />
+      )}
       <View style={styles.filaCentro}>
         <Text style={styles.filaNombre} numberOfLines={1}>{producto.nombre}</Text>
         <Text style={styles.filaDetalle} numberOfLines={1}>
@@ -230,6 +255,7 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.lg, paddingRight: spacing.md, paddingVertical: 11, minHeight: 62, backgroundColor: ui.tarjeta,
   },
   filaPresionada: { backgroundColor: ui.tarjetaPresionada },
+  casilla: { width: 40, alignItems: 'center', justifyContent: 'center' },
   franja: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   filaCentro: { flex: 1, gap: 2 },
   filaNombre: { fontSize: 16, fontWeight: '600', color: ui.texto, letterSpacing: -0.2 },

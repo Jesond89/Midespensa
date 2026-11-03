@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Producto, ItemFaltante, productosDemo, faltantesDemo, hogarMock } from '../data/mock';
 import { Unidad } from '../data/catalogo';
-import { hoyISO } from '../utils/fechas';
+import { hoyISO, sumarDias } from '../utils/fechas';
 import { useSesion } from './SesionProvider';
 
 import {
@@ -30,6 +30,16 @@ type HogarState = Despensa & {
   actualizarProducto: (id: string, cambios: Omit<Producto, 'id'>) => void;
   eliminarProducto: (id: string) => void;
   marcarAgotado: (id: string) => void;
+  /**
+   * Se tiraron por caducados. Hoy hace lo mismo que marcarAgotado en lote,
+   * pero es una accion APARTE a proposito: "se acabo" es que te lo comiste y
+   * "lo tire" es desperdicio, que es justo lo que la app existe para reducir.
+   * Cuando se agregue la tabla de desperdicio, el registro va aqui dentro y
+   * ninguna pantalla cambia.
+   */
+  marcarDesperdiciados: (ids: string[]) => void;
+  /** "Todavia sirve": recorre la caducidad en vez de perder el producto. */
+  extenderCaducidad: (ids: string[], dias: number) => void;
   agregarFaltante: (nombre: string, cantidad: number, unidad: Unidad) => void;
   quitarFaltante: (id: string) => void;
   terminarCompra: (ids: string[]) => void;
@@ -190,6 +200,60 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
               ubicacion: p.ubicacion,
             },
           ],
+        };
+      });
+    },
+    marcarDesperdiciados: (ids) => {
+      if (!ids.length) return;
+      actualizar((d) => {
+        const tirados = d.productos.filter((x) => ids.includes(x.id));
+        if (!tirados.length) return d;
+        obtenerHogarId().then((hId) => {
+          if (!hId) return;
+          for (const p of tirados) {
+            dbEliminarProducto(p.id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
+            dbAgregarFaltante(hId, {
+              nombre: p.nombre,
+              cantidad: p.cantidad,
+              unidad: p.unidad,
+              categoria: p.categoria,
+              ubicacion: p.ubicacion,
+            }).catch((e) => console.warn('Error Supabase marcarDesperdiciados:', e));
+          }
+        });
+        // AQUI va el registro de desperdicio cuando exista la tabla.
+        return {
+          productos: d.productos.filter((x) => !ids.includes(x.id)),
+          faltantes: [
+            ...d.faltantes,
+            ...tirados.map((p) => ({
+              id: nuevoId('f'),
+              nombre: p.nombre,
+              cantidad: p.cantidad,
+              unidad: p.unidad,
+              categoria: p.categoria,
+              ubicacion: p.ubicacion,
+            })),
+          ],
+        };
+      });
+    },
+    extenderCaducidad: (ids, dias) => {
+      if (!ids.length || dias <= 0) return;
+      const nueva = sumarDias(hoyISO(), dias);
+      actualizar((d) => {
+        const cambiados = d.productos.filter((x) => ids.includes(x.id));
+        obtenerHogarId().then((hId) => {
+          if (!hId) return;
+          for (const p of cambiados) {
+            const { id: _id, ...resto } = p;
+            dbActualizarProducto(p.id, { ...resto, fechaCaducidad: nueva })
+              .catch((e) => console.warn('Error Supabase extenderCaducidad:', e));
+          }
+        });
+        return {
+          ...d,
+          productos: d.productos.map((p) => (ids.includes(p.id) ? { ...p, fechaCaducidad: nueva } : p)),
         };
       });
     },
