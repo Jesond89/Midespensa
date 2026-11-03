@@ -3,19 +3,17 @@ import { Animated, Easing, LayoutChangeEvent, Platform, ScrollView, StyleSheet, 
 import { useRouter, Href } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Icono, NombreIcono } from '../../../src/components/ui/Icono';
+import { Icono } from '../../../src/components/ui/Icono';
 import { Freddy } from '../../../src/components/avatar/Freddy';
 import { ChatFreddy } from '../../../src/components/chat/ChatFreddy';
-import { Boton, Grupo } from '../../../src/components/ui/Formulario';
-import { FilaProducto } from '../../../src/components/ui/Lista';
 import { AMBIENTES, Ambiente, comentario } from '../../../src/components/hogar/ambientes';
 import { EscenaActivaCtx, useVaiven } from '../../../src/components/hogar/lienzo';
 import { disposicionInicio, DisposicionInicio } from '../../../src/components/hogar/disposicion';
 import { Burbuja } from '../../../src/components/ui/Burbuja';
-import { Entrada, Rebote, useContador, useMontaje, vibrar } from '../../../src/components/hogar/animaciones';
+import { Rebote, useContador, useMontaje, vibrar } from '../../../src/components/hogar/animaciones';
+import { ContenidoHoja } from '../../../src/components/inicio/hojas';
 import { useHogar } from '../../../src/state/HogarProvider';
 import { useSesion } from '../../../src/state/SesionProvider';
-import { estaCaducado, estaPorCaducar, ordenarPorCaducidad } from '../../../src/utils/caducidad';
 import { Producto } from '../../../src/data/mock';
 import { ui, spacing } from '../../../src/theme/tokens';
 import { useEspacioInferior } from '../../../src/theme/navegacion';
@@ -33,6 +31,13 @@ import { usePreferencias } from '../../../src/state/PreferenciasProvider';
 //   4. Títulos, Freddy, barra superior y selector, que reaccionan a scrollX.
 // Sin scroll vertical: todo se acomoda a la altura de la pantalla.
 //
+// Qué se ve y en qué orden lo arma components/inicio/hojas.tsx; aquí queda
+// el recorrido: las escenas, Freddy, el selector y la cifra de cada lugar.
+//
+// Mientras la despensa no llega no se dan cifras: ni el titular ni las
+// tarjetas muestran ceros que después cambian, y Freddy se calla hasta
+// tener algo verdadero que decir.
+//
 // Rendimiento: al abrir solo se monta el primer lugar (los demás llegan
 // un instante después), las escenas fuera de vista pausan sus animaciones
 // y las piezas están memorizadas para que cambiar de página no redibuje
@@ -42,7 +47,6 @@ const ND = Platform.OS !== 'web';
 const ANCHO_MAXIMO = 640;
 const N = AMBIENTES.length;
 const PASO_SELECTOR = 40; // botón de 36 + separación de 4
-const ALTO_FILA = 58;
 
 /** Interpolación por tramos que se repite entre cada par de páginas. */
 function porTramos<T extends number | string>(ancho: number, puntos: [number, T][]) {
@@ -71,7 +75,7 @@ export default function Inicio() {
   const insets = useSafeAreaInsets();
   const espacioInferior = useEspacioInferior();
   const { hogar } = useSesion();
-  const { productos, faltantes } = useHogar();
+  const { productos, faltantes, listo: despensaLista } = useHogar();
   const { prefs, listo: prefsListas } = usePreferencias();
 
   const [caja, setCaja] = useState({ w: 0, h: 0 });
@@ -104,7 +108,7 @@ export default function Inicio() {
   // Acomodo según pantalla y zona segura: Freddy nunca queda bajo el selector
   // ni detrás de la hoja, en ningún dispositivo (ver disposicion.ts).
   const disp = useMemo(() => disposicionInicio(W, caja.h, insets.top), [W, caja.h, insets.top]);
-  const { altoEscena, compacto, muyCompacto } = disp;
+  const { altoEscena, compacto } = disp;
 
   const alDeslizar = useMemo(
     () => Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: ND }),
@@ -182,6 +186,7 @@ export default function Inicio() {
               <Contenido
                 key={a.id}
                 montado={listo || i === pagina}
+                activo={pagina === i}
                 ambiente={a}
                 indice={i}
                 ancho={W}
@@ -192,8 +197,8 @@ export default function Inicio() {
                 productos={productos}
                 faltantes={faltantes.length}
                 codigoHogar={hogar?.codigo ?? ''}
+                cargando={!despensaLista}
                 compacto={compacto}
-                muyCompacto={muyCompacto}
                 onIr={onIr}
               />
             ))}
@@ -209,6 +214,7 @@ export default function Inicio() {
               activo={pagina === i}
               compacto={compacto}
               productos={productos}
+              cargando={!despensaLista}
               scrollX={scrollX}
             />
           ))}
@@ -223,7 +229,8 @@ export default function Inicio() {
             onPress={abrirChat}
           />
 
-          {prefs.comentariosFreddy && AMBIENTES.map((a, i) => Math.abs(i - pagina) <= 1 && (
+          {/* Freddy no opina sobre una despensa que todavía no llegó. */}
+          {prefs.comentariosFreddy && despensaLista && AMBIENTES.map((a, i) => Math.abs(i - pagina) <= 1 && (
             <Nube
               key={a.id}
               indice={i}
@@ -283,7 +290,12 @@ function EscenasApiladas({ ancho, alto, scrollX, pagina, listo, animadas }: {
   ancho: number; alto: number; scrollX: Animated.Value; pagina: number; listo: boolean; animadas: boolean;
 }) {
   return (
-    <View style={[styles.escenas, { height: alto }]}>
+    <View
+      style={[styles.escenas, { height: alto }]}
+      // Son ilustraciones: no aportan nada a quien escucha la pantalla.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       {AMBIENTES.map(({ id, Escena }, i) => {
         if (!listo && i !== pagina) return null;
         const rango = [(i - 1) * ancho, i * ancho, (i + 1) * ancho];
@@ -316,21 +328,32 @@ function EscenasApiladas({ ancho, alto, scrollX, pagina, listo, animadas }: {
 
 // ——— Cifra grande y frase de cada lugar ———
 
-function Titular({ ambiente, indice, ancho, top, activo, compacto, productos, scrollX }: {
+/**
+ * La cifra es lo primero que se ve de la pantalla, así que no puede ser
+ * falsa: mientras la despensa carga, en su lugar se dice que está cargando
+ * y el hueco se queda reservado para que nada salte al llegar el dato.
+ */
+function Titular({ ambiente, indice, ancho, top, activo, compacto, productos, cargando, scrollX }: {
   ambiente: Ambiente; indice: number; ancho: number; top: number; activo: boolean; compacto: boolean;
-  productos: Producto[]; scrollX: Animated.Value;
+  productos: Producto[]; cargando: boolean; scrollX: Animated.Value;
 }) {
   const { ubicaciones } = ambiente;
   const total = ubicaciones ? productos.filter((p) => ubicaciones.includes(p.ubicacion)).length : productos.length;
-  const cifra = useContador(total, activo);
+  const cifra = useContador(total, activo && !cargando);
   const rango = [(indice - 1) * ancho, indice * ancho, (indice + 1) * ancho];
   return (
     <Animated.View
+      pointerEvents="none"
+      accessible={activo}
+      accessibilityElementsHidden={!activo}
+      importantForAccessibility={activo ? 'yes' : 'no-hide-descendants'}
+      accessibilityLabel={cargando
+        ? `${ambiente.nombre}. Cargando tu despensa.`
+        : `${ambiente.nombre}: ${total} ${total === 1 ? 'producto' : 'productos'}. ${ambiente.frase}.`}
       style={[
         styles.titular,
         {
           top,
-          pointerEvents: 'none',
           opacity: scrollX.interpolate({
             // Uno sale antes de que entre el otro: nunca se enciman.
             inputRange: [(indice - 0.42) * ancho, indice * ancho, (indice + 0.42) * ancho],
@@ -341,226 +364,18 @@ function Titular({ ambiente, indice, ancho, top, activo, compacto, productos, sc
         },
       ]}
     >
-      <View style={styles.cifra}>
-        <Text style={[styles.cifraNumero, compacto && styles.cifraNumeroCompacto]}>{cifra}</Text>
-        <Text style={styles.cifraUnidad}>{total === 1 ? 'producto' : 'productos'}</Text>
+      <View style={[styles.cifra, { height: compacto ? 52 : 64 }]}>
+        {cargando ? (
+          <Text style={styles.cifraEspera}>Cargando…</Text>
+        ) : (
+          <>
+            <Text style={[styles.cifraNumero, compacto && styles.cifraNumeroCompacto]}>{cifra}</Text>
+            <Text style={styles.cifraUnidad}>{total === 1 ? 'producto' : 'productos'}</Text>
+          </>
+        )}
       </View>
       <Text style={styles.frase} numberOfLines={1}>{ambiente.frase}</Text>
     </Animated.View>
-  );
-}
-
-// ——— Contenido de la hoja de cada lugar ———
-
-type ContenidoProps = {
-  ambiente: Ambiente;
-  /** Falso mientras se difiere el montaje: solo ocupa su lugar en el carrusel. */
-  montado?: boolean;
-  indice: number;
-  ancho: number;
-  arriba: number;
-  abajo: number;
-  scrollX: Animated.Value;
-  montaje: Animated.Value;
-  productos: Producto[];
-  faltantes: number;
-  codigoHogar: string;
-  compacto: boolean;
-  /** Pantalla muy baja: tarjetas con icono y número en la misma línea. */
-  muyCompacto?: boolean;
-  onIr: (ruta: Href) => void;
-};
-
-function ContenidoHoja(p: ContenidoProps) {
-  const { ambiente, indice, ancho, arriba, abajo, scrollX, productos, montado = true } = p;
-  const { ubicaciones } = ambiente;
-  const propios = ubicaciones ? productos.filter((x) => ubicaciones.includes(x.ubicacion)) : productos;
-  // El contenido que se va se desvanece antes de salir de la pantalla.
-  const opacidad = scrollX.interpolate({
-    inputRange: [(indice - 0.75) * ancho, indice * ancho, (indice + 0.75) * ancho],
-    outputRange: [0, 1, 0],
-    extrapolate: 'clamp',
-  });
-  if (!montado) return <View style={{ width: ancho }} />;
-  return (
-    <Animated.View style={[styles.contenidoHoja, { width: ancho, paddingTop: arriba, paddingBottom: abajo + spacing.md, opacity: opacidad }]}>
-      {ubicaciones
-        ? <HojaLugar {...p} productos={propios} />
-        : <HojaCasa {...p} />}
-    </Animated.View>
-  );
-}
-
-function resumenCaducidad(lista: Producto[]) {
-  const caducados = lista.filter(estaCaducado).length;
-  const pronto = lista.filter(estaPorCaducar).length;
-  if (caducados) return `${caducados} ${caducados === 1 ? 'caducado' : 'caducados'}`;
-  if (pronto) return `${pronto} ${pronto === 1 ? 'caduca' : 'caducan'} pronto`;
-  return 'Todo en orden';
-}
-
-function hoyTexto() {
-  const t = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short' });
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-type AccionHoja = { texto: string; icono?: NombreIcono; onPress: () => void };
-
-function EncabezadoHoja({ titulo, subtitulo, accion }: { titulo: string; subtitulo: string; accion?: AccionHoja }) {
-  return (
-    <View style={styles.encabezadoHoja}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.hojaTitulo}>{titulo}</Text>
-        <Text style={styles.hojaSubtitulo} numberOfLines={1}>{subtitulo}</Text>
-      </View>
-      {accion && (
-        <Rebote onPress={accion.onPress} accessibilityRole="button" hitSlop={8} style={styles.chipAccion} escala={0.9}>
-          {accion.icono && <View><Icono nombre={accion.icono} tamano={13} color={ui.texto} /></View>}
-          <Text style={styles.chipAccionTexto}>{accion.texto}</Text>
-          {!accion.icono && <View><Icono nombre="chevron" tamano={12} color={ui.texto} /></View>}
-        </Rebote>
-      )}
-    </View>
-  );
-}
-
-type TarjetaProps = {
-  titulo: string; icono: NombreIcono; tinta: string; fondo: string;
-  valor?: number; alerta?: boolean; detalle: string; ruta: Href;
-};
-
-// Hoja de la casa: resumen general en tarjetas que llegan en cascada.
-function HojaCasa({ indice, ancho, scrollX, montaje, productos, faltantes, codigoHogar, compacto, muyCompacto, onIr }: ContenidoProps) {
-  const porCaducar = productos.filter(estaPorCaducar).length;
-  const caducados = productos.filter(estaCaducado).length;
-  const tarjetas: TarjetaProps[] = [
-    { titulo: 'Mi despensa', icono: 'frasco', tinta: '#5468D4', fondo: '#E9EDFF', valor: productos.length, detalle: 'productos', ruta: '/inventario' },
-    { titulo: 'Por caducar', icono: 'reloj', tinta: ui.porVencer, fondo: '#FFF1DC', valor: porCaducar, alerta: true, detalle: 'en 5 días', ruta: '/inventario?filtro=por-caducar' },
-    { titulo: 'Caducados', icono: 'alerta', tinta: ui.urgente, fondo: '#FDE5E3', valor: caducados, alerta: true, detalle: caducados === 1 ? 'producto' : 'productos', ruta: '/inventario?filtro=caducados' },
-    { titulo: 'Mi lista', icono: 'carrito', tinta: ui.fresco, fondo: '#E3F4EA', valor: faltantes, detalle: 'por comprar', ruta: '/faltantes' },
-    { titulo: '¿Qué cocino?', icono: 'olla', tinta: '#C4603F', fondo: '#FFE9DF', detalle: 'Ideas con lo que hay', ruta: '/cocina' },
-    { titulo: 'Mi hogar', icono: 'persona', tinta: ui.texto, fondo: ui.relleno, detalle: codigoHogar, ruta: '/perfil' },
-  ];
-  const entrada = { scrollX, montaje, pagina: indice, ancho };
-  return (
-    <>
-      <Entrada {...entrada} orden={0}>
-        <EncabezadoHoja
-          titulo="Tu casa hoy"
-          subtitulo={`${hoyTexto()} · ${resumenCaducidad(productos)}`}
-          accion={{ texto: 'Agregar', icono: 'mas', onPress: () => onIr('/producto/registrar') }}
-        />
-      </Entrada>
-      <View style={styles.rejilla}>
-        {[tarjetas.slice(0, 3), tarjetas.slice(3)].map((fila, f) => (
-          <View key={f} style={styles.filaRejilla}>
-            {fila.map((t, c) => (
-              <Entrada key={t.titulo} {...entrada} orden={1 + f * 3 + c} style={{ flex: 1 }}>
-                <Tarjeta {...t} compacto={compacto} muyCompacto={muyCompacto} onIr={onIr} />
-              </Entrada>
-            ))}
-          </View>
-        ))}
-      </View>
-    </>
-  );
-}
-
-function Tarjeta({ titulo, icono, tinta, fondo, valor, alerta, detalle, ruta, compacto, muyCompacto, onIr }: TarjetaProps & { compacto: boolean; muyCompacto?: boolean; onIr: (r: Href) => void }) {
-  if (muyCompacto) {
-    return (
-      <Rebote
-        onPress={() => onIr(ruta)}
-        accessibilityRole="button"
-        accessibilityLabel={`${titulo}${valor !== undefined ? `, ${valor} ${detalle}` : ''}`}
-        llenar
-        style={[styles.tarjeta, styles.tarjetaBaja]}
-      >
-        <View style={styles.tarjetaFila}>
-          <View style={[styles.tarjetaIcono, styles.tarjetaIconoBajo, { backgroundColor: fondo }]}>
-            <Icono nombre={icono} tamano={15} color={tinta} />
-          </View>
-          {valor !== undefined && <Text style={[styles.tarjetaValor, styles.tarjetaValorBajo, alerta && valor > 0 && { color: tinta }]}>{valor}</Text>}
-        </View>
-        <Text style={styles.tarjetaTitulo} numberOfLines={1}>{titulo}</Text>
-      </Rebote>
-    );
-  }
-  return (
-    <Rebote
-      onPress={() => onIr(ruta)}
-      accessibilityRole="button"
-      accessibilityLabel={`${titulo}${valor !== undefined ? `, ${valor} ${detalle}` : ''}`}
-      llenar
-      style={styles.tarjeta}
-    >
-      <View style={[styles.tarjetaIcono, { backgroundColor: fondo }]}>
-        <Icono nombre={icono} tamano={18} color={tinta} />
-      </View>
-      <View>
-        {valor !== undefined && <Text style={[styles.tarjetaValor, alerta && valor > 0 && { color: tinta }]}>{valor}</Text>}
-        <Text style={styles.tarjetaTitulo} numberOfLines={1}>{titulo}</Text>
-        {!compacto && <Text style={styles.tarjetaDetalle} numberOfLines={1}>{detalle}</Text>}
-      </View>
-    </Rebote>
-  );
-}
-
-// Hoja de un lugar: sus productos, los que caducan antes primero. Se
-// muestran los que caben; el resto queda en "Ver todo".
-function HojaLugar({ ambiente, indice, ancho, scrollX, montaje, productos, onIr }: ContenidoProps) {
-  const [alto, setAlto] = useState(0);
-  const lista = [...productos].sort(ordenarPorCaducidad);
-  const caben = Math.max(1, Math.floor(alto / ALTO_FILA));
-  const visibles = lista.length > caben ? lista.slice(0, caben - 1) : lista;
-  const resto = lista.length - visibles.length;
-  const subtitulo = lista.length
-    ? `${lista.length} ${lista.length === 1 ? 'producto' : 'productos'} · ${resumenCaducidad(lista)}`
-    : 'Vacío por ahora';
-  const entrada = { scrollX, montaje, pagina: indice, ancho };
-
-  return (
-    <>
-      <Entrada {...entrada} orden={0}>
-        <EncabezadoHoja
-          titulo={ambiente.nombre}
-          subtitulo={subtitulo}
-          accion={lista.length ? { texto: 'Ver todo', onPress: () => onIr('/inventario') } : undefined}
-        />
-      </Entrada>
-      <View style={{ flex: 1 }} onLayout={(e) => setAlto(e.nativeEvent.layout.height)}>
-        {lista.length === 0 ? (
-          <Entrada {...entrada} orden={1} style={styles.vacio}>
-            <View style={styles.vacioIcono}>
-              <Icono nombre={ambiente.icono} tamano={30} color={ui.textoSecundario} />
-            </View>
-            <Text style={styles.vacioTexto}>Aún no hay nada aquí.</Text>
-          </Entrada>
-        ) : alto > 0 && (
-          <Entrada {...entrada} orden={1}>
-            <Grupo sangria={64}>
-              {visibles.map((x) => <FilaProducto key={x.id} producto={x} />)}
-              {resto > 0 && (
-                <Rebote onPress={() => onIr('/inventario')} escala={0.98} style={styles.filaMas}>
-                  <Text style={styles.filaMasTexto}>{`Ver ${resto} más`}</Text>
-                  <View><Icono nombre="chevron" tamano={14} color={ui.textoTerciario} /></View>
-                </Rebote>
-              )}
-            </Grupo>
-          </Entrada>
-        )}
-      </View>
-      {ambiente.id === 'cocina' && (
-        <Entrada {...entrada} orden={2}>
-          <Boton titulo="¿Qué cocino hoy?" icono="olla" onPress={() => onIr('/cocina')} />
-        </Entrada>
-      )}
-      {lista.length === 0 && (
-        <Entrada {...entrada} orden={2}>
-          <Boton variante="secundario" titulo="Agregar producto" icono="mas" onPress={() => onIr('/producto/registrar')} />
-        </Entrada>
-      )}
-    </>
   );
 }
 
@@ -664,6 +479,8 @@ function NubeFreddy({ indice, ancho, geo, scrollX, activo, texto, accion, onPres
 
   return (
     <Animated.View
+      accessibilityElementsHidden={!activo}
+      importantForAccessibility={activo ? 'auto' : 'no-hide-descendants'}
       style={{
         position: 'absolute',
         left: izquierdaNube,
@@ -773,6 +590,7 @@ const styles = StyleSheet.create({
   cifraNumero: { fontSize: 60, lineHeight: 64, fontWeight: '700', letterSpacing: -2.5, color: ui.texto, fontVariant: ['tabular-nums'] },
   cifraNumeroCompacto: { fontSize: 48, lineHeight: 52 },
   cifraUnidad: { fontSize: 17, fontWeight: '600', color: ui.texto, marginBottom: 10 },
+  cifraEspera: { fontSize: 17, fontWeight: '500', color: ui.textoSecundario, letterSpacing: -0.2, marginBottom: 6 },
   frase: { fontSize: 17, fontWeight: '600', color: ui.texto, letterSpacing: -0.3 },
 
   selectorCaja: { position: 'absolute', left: spacing.xl },
@@ -789,31 +607,4 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 4,
   },
   agarradera: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: ui.separador },
-  contenidoHoja: { height: '100%', paddingHorizontal: spacing.xl, gap: spacing.md },
-  encabezadoHoja: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  hojaTitulo: { fontSize: 22, fontWeight: '700', letterSpacing: -0.5, color: ui.texto },
-  hojaSubtitulo: { fontSize: 13, color: ui.textoSecundario, marginTop: 2 },
-  chipAccion: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 12, height: 30, borderRadius: 15, backgroundColor: ui.relleno },
-  chipAccionTexto: { fontSize: 13, fontWeight: '600', color: ui.texto },
-
-  rejilla: { flex: 1, gap: spacing.sm, maxHeight: 330 },
-  filaRejilla: { flex: 1, flexDirection: 'row', gap: spacing.sm },
-  tarjeta: {
-    flex: 1, padding: spacing.md, borderRadius: 20, backgroundColor: ui.tarjeta, justifyContent: 'space-between',
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
-  },
-  tarjetaBaja: { padding: spacing.sm, justifyContent: 'center', gap: 4 },
-  tarjetaFila: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tarjetaIconoBajo: { width: 26, height: 26, borderRadius: 13 },
-  tarjetaValorBajo: { fontSize: 18 },
-  tarjetaIcono: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  tarjetaValor: { fontSize: 24, fontWeight: '700', letterSpacing: -0.6, color: ui.texto },
-  tarjetaTitulo: { fontSize: 13, fontWeight: '600', color: ui.texto, letterSpacing: -0.2 },
-  tarjetaDetalle: { fontSize: 12, color: ui.textoSecundario, marginTop: 1 },
-
-  filaMas: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, height: 48, backgroundColor: ui.tarjeta },
-  filaMasTexto: { fontSize: 15, fontWeight: '500', color: ui.textoSecundario },
-  vacio: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  vacioIcono: { width: 64, height: 64, borderRadius: 32, backgroundColor: ui.relleno, alignItems: 'center', justifyContent: 'center' },
-  vacioTexto: { fontSize: 15, color: ui.textoSecundario },
 });
