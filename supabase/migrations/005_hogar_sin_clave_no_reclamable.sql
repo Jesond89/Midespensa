@@ -16,8 +16,9 @@
 --          bloqueado_hasta = NULL
 --    WHERE codigo = 'DESP-XXXX';
 --
--- La rama de texto plano se conserva por ahora. Quitarla en cuanto el
--- diagnóstico reporte cero hogares en ese estado.
+-- El diagnostico del 4 de noviembre reporto: 1 hogar vacio (DESP-SV7Y),
+-- 5 en bcrypt, 0 en texto plano. Por eso esta migracion cierra las dos
+-- ramas: la contraseña vacia y la de texto plano.
 
 BEGIN;
 
@@ -70,11 +71,11 @@ BEGIN
   ELSIF v_hogar.clave ~ '^\$2[abxy]\$\d\d\$' THEN
     v_valida := crypt(p_clave, v_hogar.clave) = v_hogar.clave;
   ELSE
-    -- Por si quedó algún valor en texto plano: se compara y se migra a bcrypt.
-    v_valida := v_hogar.clave = p_clave;
-    IF v_valida THEN
-      UPDATE hogares SET clave = crypt(p_clave, gen_salt('bf', 12)) WHERE id = v_hogar.id;
-    END IF;
+    -- Ya no se aceptan contraseñas en texto plano. El diagnostico del 4 de
+    -- noviembre reporto cero hogares en ese estado, asi que esta rama era
+    -- codigo muerto que solo debilitaba la garantia de que toda contraseña
+    -- guardada es un hash bcrypt.
+    v_valida := false;
   END IF;
 
   IF NOT v_valida THEN
