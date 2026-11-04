@@ -20,7 +20,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -32,17 +35,26 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Mi Despensa usa la cámara para escanear tus compras y registrarlas."
+          "cameraPermission": "Mi Despensa usa la cámara para escanear tus compras y registrarlas.",
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Mi Despensa usa tus fotos para escanear tus compras y registrarlas."
+          "photosPermission": "Mi Despensa usa tus fotos para escanear tus compras y registrarlas.",
+          "microphonePermission": false
         }
       ],
       "expo-secure-store"
     ],
-    "newArchEnabled": true
+    "newArchEnabled": true,
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b9d0621d-609c-48aa-8715-73877d47b730"
+      }
+    },
+    "owner": "antonionoriega"
   }
 }
