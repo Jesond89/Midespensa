@@ -30,6 +30,15 @@ const Faltante = z.object({
   categoria: z.enum(categorias).nullish(),
   ubicacion: z.enum(ubicaciones).nullish(),
 });
+// Lo que se guarda al tirar un producto. Es una copia, no una referencia:
+// el producto sale de la despensa en el mismo momento.
+const Desperdicio = z.object({
+  nombre: z.string().trim().min(1).max(120),
+  cantidad: z.number().finite().min(0).max(100000),
+  unidad: z.enum(UNIDADES),
+  categoria: z.enum(categorias).nullish(),
+  fechaCaducidad: Fecha.nullish(),
+});
 const Id = z.string().min(1).max(64);
 
 const Peticion = z.discriminatedUnion('accion', [
@@ -40,6 +49,7 @@ const Peticion = z.discriminatedUnion('accion', [
   z.object({ accion: z.literal('eliminarProducto'), id: Id }),
   z.object({ accion: z.literal('agregarFaltante'), faltante: Faltante }),
   z.object({ accion: z.literal('eliminarFaltantes'), ids: z.array(Id).min(1).max(200) }),
+  z.object({ accion: z.literal('registrarDesperdicios'), items: z.array(Desperdicio).min(1).max(200) }),
 ]);
 
 const error = (codigo: string, status: number) => Response.json({ error: codigo }, { status });
@@ -116,6 +126,21 @@ export async function POST(request: Request) {
           .update({ ...campos, actualizado_en: new Date().toISOString() })
           .eq('id', datos.id)
           .eq('hogar_id', hogarId);
+        if (e) return error('sin-conexion', 502);
+        return Response.json({ ok: true });
+      }
+
+      case 'registrarDesperdicios': {
+        // hogar_id se pone aqui, nunca viene del cliente.
+        const filas = datos.items.map((d) => ({
+          hogar_id: hogarId,
+          nombre: d.nombre,
+          cantidad: d.cantidad,
+          unidad: d.unidad,
+          categoria: d.categoria ?? null,
+          fecha_caducidad: d.fechaCaducidad ?? null,
+        }));
+        const { error: e } = await db.from('desperdicios').insert(filas);
         if (e) return error('sin-conexion', 502);
         return Response.json({ ok: true });
       }

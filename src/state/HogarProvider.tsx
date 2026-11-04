@@ -13,6 +13,7 @@ import {
   dbAgregarProducto,
   dbActualizarProducto,
   dbEliminarProducto,
+  dbRegistrarDesperdicios,
   dbAgregarFaltante,
   dbEliminarFaltante,
   dbEliminarFaltantes,
@@ -210,6 +211,18 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
         if (!tirados.length) return d;
         obtenerHogarId().then((hId) => {
           if (!hId) return;
+          // Primero queda la constancia de lo tirado: es el dato que la app
+          // existe para medir, y el unico que no se puede reconstruir si se
+          // pierde. Lo demas es mover el producto de un lado a otro.
+          dbRegistrarDesperdicios(
+            tirados.map((p) => ({
+              nombre: p.nombre,
+              cantidad: p.cantidad,
+              unidad: p.unidad,
+              categoria: p.categoria,
+              fechaCaducidad: p.fechaCaducidad,
+            })),
+          ).catch((e) => console.warn('Error Supabase registrarDesperdicios:', e));
           for (const p of tirados) {
             dbEliminarProducto(p.id).catch((e) => console.warn('Error Supabase eliminarProducto:', e));
             dbAgregarFaltante(hId, {
@@ -221,7 +234,6 @@ export function HogarProvider({ children }: { children: React.ReactNode }) {
             }).catch((e) => console.warn('Error Supabase marcarDesperdiciados:', e));
           }
         });
-        // AQUI va el registro de desperdicio cuando exista la tabla.
         return {
           productos: d.productos.filter((x) => !ids.includes(x.id)),
           faltantes: [

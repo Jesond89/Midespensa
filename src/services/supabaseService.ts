@@ -105,6 +105,14 @@ export async function dbAgregarFaltante(_hogarId: string, f: Omit<ItemFaltante, 
   return r.id;
 }
 
+/** Deja constancia de lo que se tiro. El producto ya salio de la despensa. */
+export async function dbRegistrarDesperdicios(
+  items: { nombre: string; cantidad: number; unidad: string; categoria?: string | null; fechaCaducidad?: string | null }[],
+): Promise<void> {
+  if (!items.length) return;
+  await pedir({ accion: 'registrarDesperdicios', items });
+}
+
 export async function dbEliminarFaltante(id: string): Promise<void> {
   await pedir({ accion: 'eliminarFaltantes', ids: [id] });
 }
