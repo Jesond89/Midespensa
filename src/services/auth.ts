@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
+import { urlApi } from './api';
+
 // Cliente de las rutas /api/auth/*.
 // - JWT de acceso (15 min): solo en memoria; se renueva solo antes de vencer.
 // - Refresh token (30 días, rotativo): en el llavero del teléfono
@@ -54,7 +56,7 @@ async function aceptarTokens(datos: Tokens) {
 }
 
 async function postJson(ruta: string, cuerpo: unknown) {
-  const respuesta = await fetch(ruta, {
+  const respuesta = await fetch(urlApi(ruta), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(cuerpo),
@@ -146,7 +148,7 @@ export function alPerderSesion(cb: () => void) {
 export async function fetchAutenticado(url: string, init: RequestInit = {}): Promise<Response> {
   if (!acceso || Date.now() >= acceso.venceEn) await refrescarSesion();
   const conToken = () =>
-    fetch(url, {
+    fetch(urlApi(url), {
       ...init,
       headers: { ...(init.headers as Record<string, string>), ...(acceso ? { Authorization: `Bearer ${acceso.token}` } : {}) },
     });
